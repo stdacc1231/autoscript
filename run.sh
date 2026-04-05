@@ -29,8 +29,8 @@ AUTOSCRIPT_LICENSE_STATE_DIR="${AUTOSCRIPT_LICENSE_STATE_DIR:-/var/lib/autoscrip
 AUTOSCRIPT_LICENSE_STATE_FILE="${AUTOSCRIPT_LICENSE_STATE_FILE:-${AUTOSCRIPT_LICENSE_STATE_DIR}/state.json}"
 AUTOSCRIPT_LICENSE_CACHE_FILE="${AUTOSCRIPT_LICENSE_CACHE_FILE:-${AUTOSCRIPT_LICENSE_STATE_DIR}/cache.json}"
 AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL="https://autoscript-license.minidecrypt.workers.dev/api/v1/license/check"
-AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}"
-AUTOSCRIPT_LICENSE_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}"
+AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}}"
+AUTOSCRIPT_LICENSE_API_URL="${AUTOSCRIPT_LICENSE_API_URL:-${AUTOSCRIPT_LICENSE_DEFAULT_API_URL}}"
 MANAGE_BIN="/usr/local/bin/manage"
 MANAGE_MODULES_SRC_DIR="${REPO_DIR}/opt/manage"
 MANAGE_MODULES_DST_DIR="/opt/manage"
@@ -190,7 +190,7 @@ ensure_run_state_dir() {
 }
 
 license_guard_enabled() {
-  local api_url="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL:-}"
+  local api_url="${AUTOSCRIPT_LICENSE_API_URL:-${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL:-}}}"
   [[ -n "${api_url}" ]]
 }
 
@@ -205,13 +205,17 @@ run_license_preflight() {
   fi
 
   local license_bin=""
+  local default_api_url=""
+  local api_url=""
   license_bin="$(run_license_repo_bin_path)"
   [[ -f "${license_bin}" ]] || die "Binary source autoscript-license-check tidak ditemukan: ${license_bin}"
+  default_api_url="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}}"
+  api_url="${AUTOSCRIPT_LICENSE_API_URL:-${default_api_url}}"
 
   ensure_run_state_dir
   install -d -m 0755 "${AUTOSCRIPT_LICENSE_STATE_DIR}"
-  AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}" \
-  AUTOSCRIPT_LICENSE_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}" \
+  AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${default_api_url}" \
+  AUTOSCRIPT_LICENSE_API_URL="${api_url}" \
   AUTOSCRIPT_LICENSE_CACHE_TTL_SEC="${AUTOSCRIPT_LICENSE_CACHE_TTL_SEC:-3600}" \
   AUTOSCRIPT_LICENSE_STATE_FILE="${AUTOSCRIPT_LICENSE_STATE_FILE}" \
   AUTOSCRIPT_LICENSE_CACHE_FILE="${AUTOSCRIPT_LICENSE_CACHE_FILE}" \
@@ -405,11 +409,11 @@ check_os() {
   local ver="${VERSION_ID:-}"
   local codename="${VERSION_CODENAME:-}"
 
-  if [[ "${id}" == "ubuntu" ]]; then
+  if [[ "${id}" == "ubuntu" || "${id}" == "ubuntu-core" ]]; then
     local ok_ver
     ok_ver="$(awk "BEGIN { print (\"${ver}\" + 0 >= 20.04) ? 1 : 0 }")"
     [[ "${ok_ver}" == "1" ]] || die "Ubuntu minimal 20.04. Versi terdeteksi: ${ver}"
-    ok "OS: Ubuntu ${ver} (${codename})"
+    ok "OS: ${NAME:-Ubuntu} ${ver} (${codename})"
   elif [[ "${id}" == "debian" ]]; then
     local major="${ver%%.*}"
     [[ "${major:-0}" -ge 11 ]] 2>/dev/null || die "Debian minimal 11. Versi terdeteksi: ${ver}"

@@ -147,6 +147,16 @@ install_setup_bin_or_die() {
   chown root:root "${dst}" 2>/dev/null || true
 }
 
+sync_setup_runtime_lib_or_die() {
+  local src="${SCRIPT_DIR}/opt/setup/lib"
+  local dst="${SETUP_FALLBACK_MODULES_ROOT}/lib"
+  [[ -d "${src}" ]] || die "Library runtime setup tidak ditemukan: ${src}"
+  sync_tree_atomic "${src}" "${dst}" "library runtime setup"
+  find "${dst}" -type d -exec chmod 755 {} + 2>/dev/null || true
+  find "${dst}" -type f -exec chmod 644 {} + 2>/dev/null || true
+  chown -R root:root "${dst}" 2>/dev/null || true
+}
+
 sync_tree_atomic() {
   local src="$1"
   local dst="$2"

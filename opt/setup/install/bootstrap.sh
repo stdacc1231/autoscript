@@ -11,11 +11,11 @@ check_os() {
   local codename="${VERSION_CODENAME:-}"
 
   # Gunakan awk agar check_os tetap bisa dipanggil sebelum python3 dipasang.
-  if [[ "${id}" == "ubuntu" ]]; then
+  if [[ "${id}" == "ubuntu" || "${id}" == "ubuntu-core" ]]; then
     local ok_ver
     ok_ver="$(awk "BEGIN { print (\"${ver}\" + 0 >= 20.04) ? 1 : 0 }")"
     [[ "${ok_ver}" == "1" ]] || die "Ubuntu minimal 20.04. Versi terdeteksi: ${ver}"
-    ok "OS: Ubuntu ${ver} (${codename})"
+    ok "OS: ${NAME:-Ubuntu} ${ver} (${codename})"
   elif [[ "${id}" == "debian" ]]; then
     local major="${ver%%.*}"
     [[ "${major:-0}" -ge 11 ]] 2>/dev/null || die "Debian minimal 11. Versi terdeteksi: ${ver}"
@@ -180,19 +180,18 @@ install_extra_deps() {
   mkdir -p /var/log/chrony
 
   ensure_dpkg_consistent
-  apt_get_with_lock_retry install -y jq fail2ban chrony tar expect logrotate nftables dropbear dnsmasq-base wireguard-tools openvpn easy-rsa rclone
+  apt_get_with_lock_retry install -y jq fail2ban chrony tar expect logrotate nftables dropbear dnsmasq-base wireguard-tools openvpn easy-rsa rclone python3-venv
 
   if command -v stunnel4 >/dev/null 2>&1 || command -v stunnel >/dev/null 2>&1; then
     ok "Dependency tambahan terpasang (jq, fail2ban, chrony, expect, logrotate, nftables, dropbear, dnsmasq-base, openvpn, easy-rsa, rclone; stunnel sudah tersedia)."
-    return 0
-  fi
-  if apt_get_with_lock_retry install -y stunnel4 >/dev/null 2>&1 || apt_get_with_lock_retry install -y stunnel >/dev/null 2>&1; then
+  elif apt_get_with_lock_retry install -y stunnel4 >/dev/null 2>&1 || apt_get_with_lock_retry install -y stunnel >/dev/null 2>&1; then
     ok "Dependency tambahan terpasang (jq, fail2ban, chrony, expect, logrotate, nftables, dropbear, dnsmasq-base, openvpn, easy-rsa, rclone; stunnel opsional tersedia)."
   else
     warn "Paket stunnel tidak tersedia di repo distro. Layanan sshws-stunnel akan dilewati (opsional)."
     ok "Dependency tambahan terpasang (jq, fail2ban, chrony, expect, logrotate, nftables, dropbear, dnsmasq-base, openvpn, easy-rsa, rclone)."
   fi
 
+  sync_setup_runtime_lib_or_die
   ensure_nodejs_runtime_for_account_portal
 }
 

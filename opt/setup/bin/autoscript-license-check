@@ -86,6 +86,19 @@ def parse_int(value, default):
         return default
 
 
+def normalize_ipv4(value):
+    raw = str(value or "").strip()
+    if not raw or not IP_RE.fullmatch(raw):
+        return ""
+    try:
+        ip = ipaddress.ip_address(raw)
+    except ValueError:
+        return ""
+    if ip.version != 4:
+        return ""
+    return str(ip)
+
+
 def read_env_file(path):
     result = {}
     p = Path(path)
@@ -111,8 +124,14 @@ def load_config():
     for key, default in DEFAULTS.items():
         cfg[key] = os.environ.get(key, cfg.get(key, default))
     cfg["AUTOSCRIPT_LICENSE_CONFIG_FILE"] = os.environ.get("AUTOSCRIPT_LICENSE_CONFIG_FILE", env_cfg_file)
-    cfg["AUTOSCRIPT_LICENSE_DEFAULT_API_URL"] = TRUSTED_DEFAULT_API_URL
-    cfg["AUTOSCRIPT_LICENSE_API_URL"] = TRUSTED_DEFAULT_API_URL
+    default_api_url = str(cfg.get("AUTOSCRIPT_LICENSE_DEFAULT_API_URL") or "").strip()
+    api_url = str(cfg.get("AUTOSCRIPT_LICENSE_API_URL") or "").strip()
+    if not default_api_url:
+        default_api_url = TRUSTED_DEFAULT_API_URL
+    if not api_url:
+        api_url = default_api_url
+    cfg["AUTOSCRIPT_LICENSE_DEFAULT_API_URL"] = default_api_url
+    cfg["AUTOSCRIPT_LICENSE_API_URL"] = api_url
     cfg["runtime_enforce"] = parse_bool(cfg.get("AUTOSCRIPT_LICENSE_RUNTIME_ENFORCE"), True)
     cfg["cache_ttl_sec"] = parse_int(cfg.get("AUTOSCRIPT_LICENSE_CACHE_TTL_SEC"), 3600)
     cfg["runtime_interval_min"] = parse_int(cfg.get("AUTOSCRIPT_LICENSE_RUNTIME_INTERVAL_MIN"), 15)
@@ -275,16 +294,21 @@ def detect_public_ipv4():
             _, body = fetch_text(url, timeout=5)
         except Exception:
             continue
-        candidate = body.strip()
-        if not IP_RE.fullmatch(candidate):
-            continue
-        try:
-            ip = ipaddress.ip_address(candidate)
-        except ValueError:
-            continue
-        if ip.version == 4:
+        candidate = normalize_ipv4(body.strip())
+        if candidate:
             return candidate
-    raise RuntimeError("Gagal mendapatkan public IPv4 VPS.")
+    return ""
+
+
+def load_last_known_public_ip(cfg):
+    for path_key in ("AUTOSCRIPT_LICENSE_CACHE_FILE", "AUTOSCRIPT_LICENSE_STATE_FILE"):
+        payload = load_json(cfg[path_key])
+        if not isinstance(payload, dict):
+            continue
+        public_ip = normalize_ipv4(payload.get("public_ip"))
+        if public_ip:
+            return public_ip
+    return ""
 
 
 def state_payload(
@@ -349,6 +373,19 @@ def load_valid_cache(cfg, public_ip):
     if expires_at is None or expires_at < utcnow():
         return None
     return cache
+
+
+def load_valid_cache_for_candidates(cfg, public_ips):
+    seen = set()
+    for candidate in public_ips:
+        normalized = normalize_ipv4(candidate)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        cache = load_valid_cache(cfg, normalized)
+        if cache is not None:
+            return cache, normalized
+    return None, ""
 
 
 def edge_service_candidates(cfg):
@@ -487,9 +524,9 @@ def evaluate_license(cfg, *, stage, allow_disabled):
         save_state(cfg, payload)
         return allow_disabled, payload
 
-    public_ip = detect_public_ipv4()
+    claimed_public_ip = detect_public_ipv4()
     req_payload = {
-        "public_ipv4": public_ip,
+        "public_ipv4": claimed_public_ip,
         "stage": stage,
         "product": "autoscript",
         "hostname": os.uname().nodename,
@@ -504,6 +541,7 @@ def evaluate_license(cfg, *, stage, allow_disabled):
         allowed = bool(response.get("allowed"))
         reason = str(response.get("reason") or "")
         ttl_sec = parse_int(response.get("cache_ttl_sec"), cfg["cache_ttl_sec"])
+        public_ip = normalize_ipv4(response.get("public_ip")) or claimed_public_ip
         cache_expires_at = ""
         if allowed:
             cache = save_cache(cfg, public_ip=public_ip, reason=reason, checked_at=now, ttl_sec=ttl_sec)
@@ -526,7 +564,12 @@ def evaluate_license(cfg, *, stage, allow_disabled):
         http_status = getattr(exc, "http_status", None)
         edge_error_code = str(getattr(exc, "edge_error_code", "") or "")
         cache_allowed = stage == "runtime"
-        cache = load_valid_cache(cfg, public_ip)
+        last_known_public_ip = load_last_known_public_ip(cfg)
+        cache, cache_public_ip = load_valid_cache_for_candidates(
+            cfg,
+            (claimed_public_ip, last_known_public_ip),
+        )
+        public_ip = cache_public_ip or claimed_public_ip or last_known_public_ip
         if cache_allowed and cache is not None:
             payload = state_payload(
                 cfg,

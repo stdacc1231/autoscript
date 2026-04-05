@@ -45,9 +45,23 @@ autoscript_license_config_get() {
 }
 
 autoscript_license_resolve_api_url() {
-  local trusted_default=""
-  trusted_default="$(autoscript_license_trusted_default_api_url)"
-  printf '%s\n' "${trusted_default}"
+  local configured=""
+
+  configured="${AUTOSCRIPT_LICENSE_API_URL:-}"
+  [[ -n "${configured}" ]] || configured="$(autoscript_license_config_get "AUTOSCRIPT_LICENSE_API_URL" 2>/dev/null || true)"
+  if [[ -n "${configured}" ]]; then
+    printf '%s\n' "${configured}"
+    return 0
+  fi
+
+  configured="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-}"
+  [[ -n "${configured}" ]] || configured="$(autoscript_license_config_get "AUTOSCRIPT_LICENSE_DEFAULT_API_URL" 2>/dev/null || true)"
+  if [[ -n "${configured}" ]]; then
+    printf '%s\n' "${configured}"
+    return 0
+  fi
+
+  autoscript_license_trusted_default_api_url
 }
 
 autoscript_license_resolve_bin_path() {

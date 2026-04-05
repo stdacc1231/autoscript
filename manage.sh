@@ -212,7 +212,6 @@ MAIN_INFO_CACHE_DOMAIN="-"
 MAIN_INFO_CACHE_LICENSE_STATUS="-"
 MAIN_INFO_CACHE_LICENSE_DAYS="-"
 MAIN_INFO_CACHE_INVALIDATION_FILE="${WORK_DIR}/main-info.cache.invalidate"
-MANAGE_LICENSE_PUBLIC_STATUS_URL="https://autoscript-license.minidecrypt.workers.dev/api/public/license/status"
 ACCOUNT_INFO_DOMAIN_SYNC_STATE_FILE="${WORK_DIR}/account-info-domain.state"
 ACCOUNT_INFO_DOMAIN_SYNC_CHECK_TTL=15
 ACCOUNT_INFO_DOMAIN_SYNC_LAST_CHECK_TS=0
@@ -2054,9 +2053,31 @@ else:
 PY
 }
 
+main_info_license_status_url_get() {
+  local api_url=""
+  if declare -F manage_license_public_status_url >/dev/null 2>&1; then
+    manage_license_public_status_url
+    return 0
+  fi
+
+  api_url="${AUTOSCRIPT_LICENSE_API_URL:-${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-https://autoscript-license.minidecrypt.workers.dev/api/v1/license/check}}"
+  case "${api_url}" in
+    */api/v1/license/check)
+      printf '%s/api/public/license/status\n' "${api_url%/api/v1/license/check}"
+      return 0
+      ;;
+  esac
+  if [[ "${api_url}" =~ ^https?://[^/]+ ]]; then
+    printf '%s/api/public/license/status\n' "${BASH_REMATCH[0]}"
+    return 0
+  fi
+  printf '%s\n' "https://autoscript-license.minidecrypt.workers.dev/api/public/license/status"
+}
+
 main_info_license_summary_get() {
   local ip="${1:-}"
   local fallback_status="-"
+  local status_url=""
   local summary=""
 
   fallback_status="$(main_info_license_state_status_get)"
@@ -2067,8 +2088,10 @@ main_info_license_summary_get() {
     return 0
   fi
 
+  status_url="$(main_info_license_status_url_get)"
+
   summary="$(
-    python3 - "${MANAGE_LICENSE_PUBLIC_STATUS_URL}" "${ip}" "${fallback_status}" <<'PY' 2>/dev/null || true
+    python3 - "${status_url}" "${ip}" "${fallback_status}" <<'PY' 2>/dev/null || true
 import json, math, sys, urllib.request
 
 url, ip, fallback_status = sys.argv[1:4]

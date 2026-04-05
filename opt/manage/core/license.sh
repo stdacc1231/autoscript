@@ -32,10 +32,45 @@ manage_license_guard_bin_path() {
 }
 
 manage_license_guard_api_url() {
-  local trusted_default=""
+  local configured=""
 
-  trusted_default="$(manage_license_trusted_default_api_url)"
-  printf '%s\n' "${trusted_default}"
+  configured="${AUTOSCRIPT_LICENSE_API_URL:-}"
+  [[ -n "${configured}" ]] || configured="$(manage_license_config_get "AUTOSCRIPT_LICENSE_API_URL" 2>/dev/null || true)"
+  if [[ -n "${configured}" ]]; then
+    printf '%s\n' "${configured}"
+    return 0
+  fi
+
+  configured="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-}"
+  [[ -n "${configured}" ]] || configured="$(manage_license_config_get "AUTOSCRIPT_LICENSE_DEFAULT_API_URL" 2>/dev/null || true)"
+  if [[ -n "${configured}" ]]; then
+    printf '%s\n' "${configured}"
+    return 0
+  fi
+
+  manage_license_trusted_default_api_url
+}
+
+manage_license_public_status_url() {
+  local api_url=""
+  local api_origin=""
+  local trusted_api_url=""
+  api_url="$(manage_license_guard_api_url)"
+  case "${api_url}" in
+    */api/v1/license/check)
+      printf '%s/api/public/license/status\n' "${api_url%/api/v1/license/check}"
+      return 0
+      ;;
+  esac
+
+  if [[ "${api_url}" =~ ^https?://[^/]+ ]]; then
+    api_origin="${BASH_REMATCH[0]}"
+    printf '%s/api/public/license/status\n' "${api_origin}"
+    return 0
+  fi
+
+  trusted_api_url="$(manage_license_trusted_default_api_url)"
+  printf '%s/api/public/license/status\n' "${trusted_api_url%/api/v1/license/check}"
 }
 
 manage_license_guard_enabled() {

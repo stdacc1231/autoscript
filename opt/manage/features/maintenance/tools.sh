@@ -74,6 +74,8 @@ install_telegram_bot_menu() {
 autoscript_license_status_menu() {
   local license_bin="/usr/local/bin/autoscript-license-check"
   local trusted_default_api_url="https://autoscript-license.minidecrypt.workers.dev/api/v1/license/check"
+  local api_url="${AUTOSCRIPT_LICENSE_API_URL:-}"
+  local default_api_url="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-}"
   local config_file="/etc/autoscript/license/config.env"
 
   ui_menu_screen_begin "13) Tools > License Guard"
@@ -96,8 +98,17 @@ autoscript_license_status_menu() {
     return 0
   fi
 
-  if ! AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${trusted_default_api_url}" \
-    AUTOSCRIPT_LICENSE_API_URL="${trusted_default_api_url}" \
+  if [[ -z "${default_api_url}" && -r "${config_file}" ]]; then
+    default_api_url="$(awk -F= '$1=="AUTOSCRIPT_LICENSE_DEFAULT_API_URL"{print substr($0, index($0, "=")+1); exit}' "${config_file}" 2>/dev/null | tr -d '\r' || true)"
+  fi
+  if [[ -z "${api_url}" && -r "${config_file}" ]]; then
+    api_url="$(awk -F= '$1=="AUTOSCRIPT_LICENSE_API_URL"{print substr($0, index($0, "=")+1); exit}' "${config_file}" 2>/dev/null | tr -d '\r' || true)"
+  fi
+  [[ -n "${default_api_url}" ]] || default_api_url="${trusted_default_api_url}"
+  [[ -n "${api_url}" ]] || api_url="${default_api_url}"
+
+  if ! AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${default_api_url}" \
+    AUTOSCRIPT_LICENSE_API_URL="${api_url}" \
     AUTOSCRIPT_LICENSE_CONFIG_FILE="${config_file}" \
     "${license_bin}" status; then
     warn "Gagal membaca status license guard."
