@@ -9,6 +9,12 @@ Autoscript dirancang untuk operator yang ingin satu repo untuk:
 - menjalankan ingress publik berbasis `Go edge-mux`
 - mengoperasikan `WARP`, `BadVPN`, `Domain Guard`, dan bot `Telegram`
 
+## Status Biaya
+
+`autoscript` dan source repo ini gratis untuk digunakan.
+
+Aktivasi lisensi IP VPS tetap menjadi bagian dari flow produk, tetapi dokumentasi ini menegaskan bahwa software/repo `autoscript` sendiri tidak dijual berbayar.
+
 ## Sebelum Install
 Sebelum menjalankan installer, aktifkan dulu lisensi IP VPS di website:
 
