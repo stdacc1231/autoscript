@@ -1095,9 +1095,14 @@ warp_runtime_snapshot_restore() {
   return 0
 }
 
-warp_runtime_refresh_ssh_network_after_profile_change() {
-  declare -F ssh_network_runtime_refresh_if_available >/dev/null 2>&1 || return 0
-  if ! ssh_network_runtime_refresh_if_available; then
+warp_runtime_refresh_followup_after_profile_change() {
+  if declare -F speed_policy_resync_after_warp_change >/dev/null 2>&1 \
+    && ! speed_policy_resync_after_warp_change; then
+    warn "Runtime speed policy gagal disegarkan sesudah profile WARP berubah."
+    return 1
+  fi
+  if declare -F ssh_network_runtime_refresh_if_available >/dev/null 2>&1 \
+    && ! ssh_network_runtime_refresh_if_available; then
     warn "Runtime SSH Network gagal disegarkan sesudah profile WARP berubah."
     return 1
   fi
@@ -1109,7 +1114,7 @@ warp_runtime_snapshot_restore_or_fail() {
   local snap_dir="$1"
   local primary_message="$2"
   if warp_runtime_snapshot_restore "${snap_dir}" >/dev/null 2>&1 \
-    && warp_runtime_refresh_ssh_network_after_profile_change >/dev/null 2>&1; then
+    && warp_runtime_refresh_followup_after_profile_change >/dev/null 2>&1; then
     warn "${primary_message}"
   else
     warn "${primary_message}"
@@ -1125,7 +1130,7 @@ warp_runtime_snapshot_restore_on_abort() {
   local snap_dir="${1:-}"
   [[ -n "${snap_dir}" && -d "${snap_dir}" ]] || return 0
   if warp_runtime_snapshot_restore "${snap_dir}" >/dev/null 2>&1 \
-    && warp_runtime_refresh_ssh_network_after_profile_change >/dev/null 2>&1; then
+    && warp_runtime_refresh_followup_after_profile_change >/dev/null 2>&1; then
     warn "Transaksi WARP terputus sebelum selesai. Snapshot runtime dipulihkan."
   else
     warn "Transaksi WARP terputus sebelum selesai dan rollback snapshot gagal."
@@ -1268,7 +1273,7 @@ warp_global_menu() {
 
 warp_user_set_effective_mode() {
   local email="$1"
-  local desired="$2" # direct|warp|inherit
+  local desired="$2" # direct|warp|inherit|reset|global
   local candidate_file="${3:-}"
 
   if is_default_xray_email_or_tag "${email}"; then
@@ -1277,7 +1282,7 @@ warp_user_set_effective_mode() {
   fi
 
   case "${desired}" in
-    inherit) desired="off" ;;
+    inherit|reset|global) desired="off" ;;
   esac
 
   case "${desired}" in
@@ -1294,7 +1299,7 @@ warp_user_set_effective_mode() {
         fi
       fi
       ;;
-    *) warn "Mode user harus direct|warp|inherit" ;;
+    *) warn "Mode user harus direct|warp|reset" ;;
   esac
 }
 
@@ -1409,7 +1414,7 @@ warp_per_user_menu() {
       elif [[ -n "${warp_set[${email}]:-}" ]]; then
         status="warp"
       else
-        status="inherit:${default_mode}"
+        status="global:${default_mode}"
       fi
 
       printf "%-4s %-32s %-8s\n" "${row}" "${email}" "${status}"
@@ -1513,7 +1518,7 @@ warp_per_user_menu() {
     elif [[ -n "${warp_set[${email}]:-}" ]]; then
       cur_status="warp"
     else
-      cur_status="inherit:${default_mode}"
+      cur_status="global:${default_mode}"
     fi
 
     while true; do
@@ -1525,7 +1530,7 @@ warp_per_user_menu() {
       hr
       echo "  1) direct"
       echo "  2) warp"
-      echo "  3) inherit (ikut global)"
+      echo "  3) reset ke global"
       echo "  0) kembali"
       hr
       read -r -p "Pilih: " s
@@ -1574,7 +1579,7 @@ warp_per_user_menu() {
           pause
           ;;
         3)
-          if ! confirm_yn_or_back "Reset user ${email} ke INHERIT sekarang?"; then
+          if ! confirm_yn_or_back "Reset user ${email} ke mode GLOBAL sekarang?"; then
             warn "Reset WARP per-user dibatalkan."
             pause
             continue
@@ -1584,9 +1589,9 @@ warp_per_user_menu() {
             pause
             continue
           fi
-          if warp_user_set_effective_mode "${email}" inherit "${routing_candidate}"; then
+          if warp_user_set_effective_mode "${email}" reset "${routing_candidate}"; then
             pending_changes="true"
-            log "Per-user di-stage INHERIT: ${email}"
+            log "Per-user di-stage GLOBAL: ${email}"
             pause
             break
           fi
@@ -1601,7 +1606,7 @@ warp_per_user_menu() {
 
 warp_inbound_set_effective_mode() {
   local tag="$1"
-  local desired="$2" # direct|warp|inherit
+  local desired="$2" # direct|warp|inherit|reset|global
   local candidate_file="${3:-}"
 
   if [[ "${tag}" == "api" ]]; then
@@ -1610,7 +1615,7 @@ warp_inbound_set_effective_mode() {
   fi
 
   case "${desired}" in
-    inherit) desired="off" ;;
+    inherit|reset|global) desired="off" ;;
   esac
 
   case "${desired}" in
@@ -1627,7 +1632,7 @@ warp_inbound_set_effective_mode() {
         fi
       fi
       ;;
-    *) warn "Mode inbound harus direct|warp|inherit" ;;
+    *) warn "Mode inbound harus direct|warp|reset" ;;
   esac
 }
 
@@ -1730,14 +1735,14 @@ warp_per_inbounds_menu() {
       elif [[ -n "${warp_set[${t}]:-}" ]]; then
         status="warp"
       else
-        status="inherit:${default_mode}"
+        status="global:${default_mode}"
       fi
 
       printf "%-4s %-28s %-8s\n" "$((i + 1))" "${t}" "${status}"
     done
 
     hr
-    echo "Pilih No untuk stage (direct/warp/inherit), atau apply/discard/0 kembali"
+    echo "Pilih No untuk stage (direct/warp/reset-global), atau apply/discard/0 kembali"
     read -r -p "Pilih: " c
 
     if is_back_choice "${c}"; then
@@ -1819,7 +1824,7 @@ warp_per_inbounds_menu() {
     elif [[ -n "${warp_set[${t}]:-}" ]]; then
       cur_status="warp"
     else
-      cur_status="inherit:${default_mode}"
+      cur_status="global:${default_mode}"
     fi
 
     while true; do
@@ -1831,7 +1836,7 @@ warp_per_inbounds_menu() {
       hr
       echo "  1) direct"
       echo "  2) warp"
-      echo "  3) inherit (ikut global)"
+      echo "  3) reset ke global"
       echo "  0) kembali"
       hr
       read -r -p "Pilih: " s
@@ -1880,7 +1885,7 @@ warp_per_inbounds_menu() {
 	          pause
 	          ;;
         3)
-          if ! confirm_yn_or_back "Reset inbound ${t} ke INHERIT sekarang?"; then
+          if ! confirm_yn_or_back "Reset inbound ${t} ke mode GLOBAL sekarang?"; then
             warn "Reset WARP per-inbound dibatalkan."
             pause
             continue
@@ -1890,9 +1895,9 @@ warp_per_inbounds_menu() {
             pause
             continue
           fi
-          if warp_inbound_set_effective_mode "${t}" inherit "${routing_candidate}"; then
+          if warp_inbound_set_effective_mode "${t}" reset "${routing_candidate}"; then
             pending_changes="true"
-            log "Per-inbounds di-stage INHERIT: ${t}"
+            log "Per-inbounds di-stage GLOBAL: ${t}"
             pause
             break
           fi
@@ -3356,8 +3361,8 @@ warp_tier_switch_free() {
     if ! network_state_set_many "${WARP_MODE_STATE_KEY}" "consumer" "${WARP_TIER_STATE_KEY}" "free" "warp_tier_last_verified" "free" "warp_tier_last_verified_at" "$(date '+%Y-%m-%d %H:%M:%S')"; then
       warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Gagal menyimpan target tier WARP free."
     fi
-    if ! warp_runtime_refresh_ssh_network_after_profile_change; then
-      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime SSH Network gagal disegarkan sesudah switch WARP free."
+    if ! warp_runtime_refresh_followup_after_profile_change; then
+      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime follow-up WARP gagal disegarkan sesudah switch WARP free."
     fi
     log "WARP tier target di-set: free"
     warp_txn_success="true"
@@ -3479,8 +3484,8 @@ warp_tier_switch_plus() {
       "warp_tier_last_verified_at" "$(date '+%Y-%m-%d %H:%M:%S')"; then
       warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Gagal menyimpan target tier WARP plus."
     fi
-    if ! warp_runtime_refresh_ssh_network_after_profile_change; then
-      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime SSH Network gagal disegarkan sesudah switch WARP plus."
+    if ! warp_runtime_refresh_followup_after_profile_change; then
+      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime follow-up WARP gagal disegarkan sesudah switch WARP plus."
     fi
     log "WARP tier target di-set: plus"
     warp_txn_success="true"
@@ -3599,8 +3604,8 @@ warp_tier_reconnect_regenerate() {
     if ! network_state_set_many "${WARP_MODE_STATE_KEY}" "consumer" "${WARP_TIER_STATE_KEY}" "${target}" "warp_tier_last_verified" "${target}" "warp_tier_last_verified_at" "$(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1; then
       warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Gagal menyimpan target tier WARP setelah reconnect."
     fi
-    if ! warp_runtime_refresh_ssh_network_after_profile_change; then
-      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime SSH Network gagal disegarkan sesudah reconnect/regenerate WARP."
+    if ! warp_runtime_refresh_followup_after_profile_change; then
+      warp_runtime_snapshot_restore_or_fail "${snap_dir}" "Runtime follow-up WARP gagal disegarkan sesudah reconnect/regenerate WARP."
     fi
     warp_txn_success="true"
     trap - EXIT

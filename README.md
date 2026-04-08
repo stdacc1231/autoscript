@@ -205,14 +205,20 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 13) Tools
 1) Telegram Bot
 2) WARP Tier
-3) Backup/Restore
-4) License Guard
+3) License Guard
+4) Backup/Restore
 0) Back
 ```
 
+### WARP Xray
+- `Xray Network -> WARP` mendukung override per-user dan per-inbound dengan 3 aksi:
+  - `direct`
+  - `warp`
+  - `reset ke global`
+
 ## Backup/Restore
 - `Backup/Restore` sekarang tersedia di:
-  - CLI `manage` lewat `13) Tools -> 3) Backup/Restore`
+  - CLI `manage` lewat `13) Tools -> 4) Backup/Restore`
   - bot Telegram lewat `Main Menu -> Backup/Restore`
 - Provider cloud yang didukung:
   - `Google Drive`
