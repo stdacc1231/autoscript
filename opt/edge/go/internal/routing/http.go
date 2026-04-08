@@ -131,9 +131,15 @@ func normalizeTargetPath(target string) string {
 
 func knownRouteFromPath(path string) string {
 	segments := pathSegments(path)
-	for _, segment := range segments {
-		if _, ok := knownRouteNames[segment]; ok {
-			return segment
+	if len(segments) == 0 {
+		return ""
+	}
+	if _, ok := knownRouteNames[segments[0]]; ok {
+		return segments[0]
+	}
+	if len(segments) >= 2 {
+		if _, ok := knownRouteNames[segments[1]]; ok {
+			return segments[1]
 		}
 	}
 	return ""
@@ -164,7 +170,7 @@ func isWebSocketRequest(req HTTPRequest) bool {
 
 func looksLikeSSHWSPath(path string) bool {
 	segments := pathSegments(path)
-	if len(segments) == 0 {
+	if len(segments) == 0 || len(segments) > 2 {
 		return false
 	}
 	last := segments[len(segments)-1]
