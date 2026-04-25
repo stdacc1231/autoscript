@@ -321,6 +321,7 @@ func TestRouteBlockedByHealthUsesSpecificBackendKey(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 	}
 	health := &backendHealthState{}
@@ -348,6 +349,7 @@ func TestRouteDecisionEventUsesSpecificBackendStatus(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 	}
 	health := &backendHealthState{}
@@ -375,6 +377,7 @@ func TestDecideTLSPayloadRouteUsesSNIOverride(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 		SNIRoutes: map[string]string{
 			"vmess.example.com": "vless_tcp",
@@ -412,6 +415,7 @@ func TestDecideTLSPayloadRouteFallsBackWhenSNIMissing(t *testing.T) {
 		HTTPBackend:      "127.0.0.1:18080",
 		SSHBackend:       "127.0.0.1:22022",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 	}
 	initial := []byte("GET / HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
@@ -432,6 +436,42 @@ func TestDecideTLSPayloadRouteFallsBackWhenSNIMissing(t *testing.T) {
 	}
 }
 
+func TestDecideTLSPayloadRouteFallsBackToVMessForUnknownInnerPayload(t *testing.T) {
+	cfg := runtime.Config{
+		SSHBackend:       "127.0.0.1:22022",
+		VMessRawBackend:  "127.0.0.1:33176",
+		TrojanRawBackend: "127.0.0.1:48778",
+	}
+
+	decision := decideTLSPayloadRoute(cfg, "tls-inner", []byte{0x01, 0x02, 0x03}, detect.ClassUnknown, "", "", false)
+
+	if decision.target != cfg.VMessRawBackendAddr() {
+		t.Fatalf("target = %q, want %q", decision.target, cfg.VMessRawBackendAddr())
+	}
+	if decision.route != "vmess-tcp" {
+		t.Fatalf("route = %q, want vmess-tcp", decision.route)
+	}
+	if decision.reason != "vmess_fallback_unknown" {
+		t.Fatalf("reason = %q, want vmess_fallback_unknown", decision.reason)
+	}
+}
+
+func TestDecideTLSPayloadRouteKeepsUnknownPublicRawPayloadOnSSH(t *testing.T) {
+	cfg := runtime.Config{
+		SSHBackend:      "127.0.0.1:22022",
+		VMessRawBackend: "127.0.0.1:33176",
+	}
+
+	decision := decideTLSPayloadRoute(cfg, "tls-port", []byte{0x01, 0x02, 0x03}, detect.ClassUnknown, "", "", false)
+
+	if decision.target != cfg.SSHBackendAddr() {
+		t.Fatalf("target = %q, want %q", decision.target, cfg.SSHBackendAddr())
+	}
+	if decision.route != "unknown" {
+		t.Fatalf("route = %q, want unknown", decision.route)
+	}
+}
+
 func TestResolveSNIRouteDecisionUsesConfiguredBackend(t *testing.T) {
 	cfg := runtime.Config{
 		HTTPBackend:      "127.0.0.1:18080",
@@ -439,9 +479,11 @@ func TestResolveSNIRouteDecisionUsesConfiguredBackend(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 		SNIRoutes: map[string]string{
 			"vmess.example.com": "vless_tcp",
+			"tcp.example.com":   "vmess_tcp",
 			"ws.example.com":    "ssh_ws",
 		},
 	}
@@ -464,6 +506,17 @@ func TestResolveSNIRouteDecisionUsesConfiguredBackend(t *testing.T) {
 	}
 	if decision.reason != "sni_match" {
 		t.Fatalf("decision.reason = %q, want sni_match", decision.reason)
+	}
+
+	vmessDecision, ok := resolveSNIRouteDecision(cfg, "tcp.example.com", "tls-inner")
+	if !ok {
+		t.Fatalf("resolveSNIRouteDecision(vmess) ok = false, want true")
+	}
+	if vmessDecision.target != cfg.VMessRawBackendAddr() {
+		t.Fatalf("vmessDecision.target = %q, want %q", vmessDecision.target, cfg.VMessRawBackendAddr())
+	}
+	if vmessDecision.route != "sni-vmess-tcp" {
+		t.Fatalf("vmessDecision.route = %q, want sni-vmess-tcp", vmessDecision.route)
 	}
 
 	wsDecision, ok := resolveSNIRouteDecision(cfg, "ws.example.com", "tls-inner")
@@ -546,6 +599,7 @@ func TestBackendHealthSnapshotIncludesPassthroughTargets(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 		SNIPassthrough: map[string]string{
 			"vision.example.com": "127.0.0.1:18443",
@@ -567,6 +621,7 @@ func TestDecideTLSPayloadRoutePrefersSNIToDetectedClass(t *testing.T) {
 		HTTPBackend:      "127.0.0.1:18080",
 		SSHBackend:       "127.0.0.1:22022",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 		SNIRoutes: map[string]string{
 			"forced.example.com": "trojan_tcp",

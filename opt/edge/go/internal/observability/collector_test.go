@@ -144,10 +144,12 @@ func TestSnapshotIncludesConfiguredRouteTable(t *testing.T) {
 		SSHTLSBackend:    "127.0.0.1:22443",
 		SSHWSBackend:     "127.0.0.1:10015",
 		VLESSRawBackend:  "127.0.0.1:33175",
+		VMessRawBackend:  "127.0.0.1:33176",
 		TrojanRawBackend: "127.0.0.1:48778",
 		SNIRoutes: map[string]string{
 			"alpha.example.com": "vless_tcp",
 			"beta.example.com":  "ssh_ws",
+			"delta.example.com": "vmess_tcp",
 		},
 		SNIPassthrough: map[string]string{
 			"gamma.example.com": "127.0.0.1:18443",
@@ -155,8 +157,8 @@ func TestSnapshotIncludesConfiguredRouteTable(t *testing.T) {
 	}
 
 	snapshot := collector.Snapshot(cfg, ListenerSnapshot{}, nil, nil)
-	if len(snapshot.ConfiguredRoutes) != 3 {
-		t.Fatalf("len(ConfiguredRoutes) = %d, want 3", len(snapshot.ConfiguredRoutes))
+	if len(snapshot.ConfiguredRoutes) != 4 {
+		t.Fatalf("len(ConfiguredRoutes) = %d, want 4", len(snapshot.ConfiguredRoutes))
 	}
 	if snapshot.ConfiguredRoutes[0].Host != "alpha.example.com" {
 		t.Fatalf("ConfiguredRoutes[0].Host = %q, want alpha.example.com", snapshot.ConfiguredRoutes[0].Host)
@@ -167,10 +169,13 @@ func TestSnapshotIncludesConfiguredRouteTable(t *testing.T) {
 	if snapshot.ConfiguredRoutes[1].Host != "beta.example.com" || snapshot.ConfiguredRoutes[1].RouteAlias != "ssh_ws" {
 		t.Fatalf("ConfiguredRoutes[1] = %#v, want beta.example.com ssh_ws", snapshot.ConfiguredRoutes[1])
 	}
-	if snapshot.ConfiguredRoutes[2].Host != "gamma.example.com" || snapshot.ConfiguredRoutes[2].Mode != "passthrough" {
-		t.Fatalf("ConfiguredRoutes[2] = %#v, want gamma.example.com passthrough", snapshot.ConfiguredRoutes[2])
+	if snapshot.ConfiguredRoutes[2].Host != "delta.example.com" || snapshot.ConfiguredRoutes[2].Backend != "vmess" {
+		t.Fatalf("ConfiguredRoutes[2] = %#v, want delta.example.com vmess", snapshot.ConfiguredRoutes[2])
 	}
-	if snapshot.ConfiguredRoutes[2].HealthKey != "passthrough:127.0.0.1:18443" {
-		t.Fatalf("ConfiguredRoutes[2].HealthKey = %q, want passthrough:127.0.0.1:18443", snapshot.ConfiguredRoutes[2].HealthKey)
+	if snapshot.ConfiguredRoutes[3].Host != "gamma.example.com" || snapshot.ConfiguredRoutes[3].Mode != "passthrough" {
+		t.Fatalf("ConfiguredRoutes[3] = %#v, want gamma.example.com passthrough", snapshot.ConfiguredRoutes[3])
+	}
+	if snapshot.ConfiguredRoutes[3].HealthKey != "passthrough:127.0.0.1:18443" {
+		t.Fatalf("ConfiguredRoutes[3].HealthKey = %q, want passthrough:127.0.0.1:18443", snapshot.ConfiguredRoutes[3].HealthKey)
 	}
 }

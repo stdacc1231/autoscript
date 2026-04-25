@@ -38,6 +38,13 @@ func RefreshDiscoveredRawBackends(cfg Config) (Config, bool, error) {
 		cfg.VLESSRawBackend = addr
 		cfg.VLESSRawSource = discoveredBackendSource(file, "default@vless-tcp")
 	}
+	if addr, ok := discovered["default@vmess-tcp"]; ok && shouldOverrideDiscoveredBackend(cfg.VMessRawBackend) {
+		if cfg.VMessRawBackend != addr || cfg.VMessRawSource != discoveredBackendSource(file, "default@vmess-tcp") {
+			changed = true
+		}
+		cfg.VMessRawBackend = addr
+		cfg.VMessRawSource = discoveredBackendSource(file, "default@vmess-tcp")
+	}
 	if addr, ok := discovered["default@trojan-tcp"]; ok && shouldOverrideDiscoveredBackend(cfg.TrojanRawBackend) {
 		if cfg.TrojanRawBackend != addr || cfg.TrojanRawSource != discoveredBackendSource(file, "default@trojan-tcp") {
 			changed = true
@@ -59,11 +66,11 @@ func discoverRawBackendsFromXrayFile(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("parse xray inbounds %s: %w", path, err)
 	}
 
-	out := make(map[string]string, 2)
+	out := make(map[string]string, 3)
 	for _, inbound := range payload.Inbounds {
 		tag := strings.TrimSpace(inbound.Tag)
 		switch tag {
-		case "default@vless-tcp", "default@trojan-tcp":
+		case "default@vless-tcp", "default@vmess-tcp", "default@trojan-tcp":
 		default:
 			continue
 		}

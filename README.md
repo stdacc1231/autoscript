@@ -99,6 +99,7 @@ Internet / Cloudflare
 | `VMess WS` | `443, 80` + alt port Cloudflare |
 | `VMess HUP` | `443, 80` + alt port Cloudflare |
 | `VMess gRPC` | `443, 80` + alt port Cloudflare |
+| `VMess TCP+TLS` | `443, 80` + alt port Cloudflare |
 | `Trojan XHTTP` | `443, 80` + alt port Cloudflare |
 | `Trojan WS` | `443, 80` + alt port Cloudflare |
 | `Trojan HUP` | `443, 80` + alt port Cloudflare |

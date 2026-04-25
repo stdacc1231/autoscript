@@ -66,7 +66,7 @@ func main() {
 
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 	logger.Printf(
-		"edge-mux starting provider=%s http=%s tls=%s metrics=%s metrics_enabled=%t http_backend=%s ssh_direct_backend=%s ssh_tls_backend=%s ssh_ws_backend=%s vless_raw_backend=%s vless_source=%s trojan_raw_backend=%s trojan_source=%s sni_routes=%s sni_passthrough=%s timeout=%s tls_handshake_timeout=%s classic_tls_on_80=%t max_conns=%d max_conns_per_ip=%d accept_rate_per_ip=%d/%s cooldown=%d/%s/%s accept_proxy_protocol=%t",
+		"edge-mux starting provider=%s http=%s tls=%s metrics=%s metrics_enabled=%t http_backend=%s ssh_direct_backend=%s ssh_tls_backend=%s ssh_ws_backend=%s vless_raw_backend=%s vless_source=%s vmess_raw_backend=%s vmess_source=%s trojan_raw_backend=%s trojan_source=%s sni_routes=%s sni_passthrough=%s timeout=%s tls_handshake_timeout=%s classic_tls_on_80=%t max_conns=%d max_conns_per_ip=%d accept_rate_per_ip=%d/%s cooldown=%d/%s/%s accept_proxy_protocol=%t",
 		cfg.Provider,
 		formatListenAddrs(cfg.HTTPListenAddrs()),
 		formatListenAddrs(cfg.TLSListenAddrs()),
@@ -78,6 +78,8 @@ func main() {
 		cfg.SSHWSBackendAddr(),
 		cfg.VLESSRawBackendAddr(),
 		cfg.VLESSRawSource,
+		cfg.VMessRawBackendAddr(),
+		cfg.VMessRawSource,
 		cfg.TrojanRawBackendAddr(),
 		cfg.TrojanRawSource,
 		formatSNIRoutes(cfg.SNIRoutes),
@@ -715,7 +717,7 @@ func handleReloads(
 		}
 		collector.ObserveReloadSuccess()
 		logger.Printf(
-			"edge-mux reloaded http=%s tls=%s metrics=%s metrics_enabled=%t http_backend=%s ssh_backend=%s vless_raw_backend=%s vless_source=%s trojan_raw_backend=%s trojan_source=%s sni_routes=%s sni_passthrough=%s timeout=%s tls_handshake_timeout=%s classic_tls_on_80=%t",
+			"edge-mux reloaded http=%s tls=%s metrics=%s metrics_enabled=%t http_backend=%s ssh_backend=%s vless_raw_backend=%s vless_source=%s vmess_raw_backend=%s vmess_source=%s trojan_raw_backend=%s trojan_source=%s sni_routes=%s sni_passthrough=%s timeout=%s tls_handshake_timeout=%s classic_tls_on_80=%t",
 			formatListenAddrs(newCfg.HTTPListenAddrs()),
 			formatListenAddrs(newCfg.TLSListenAddrs()),
 			newCfg.MetricsAddr(),
@@ -724,6 +726,8 @@ func handleReloads(
 			newCfg.SSHBackendAddr(),
 			newCfg.VLESSRawBackendAddr(),
 			newCfg.VLESSRawSource,
+			newCfg.VMessRawBackendAddr(),
+			newCfg.VMessRawSource,
 			newCfg.TrojanRawBackendAddr(),
 			newCfg.TrojanRawSource,
 			formatSNIRoutes(newCfg.SNIRoutes),
@@ -1200,6 +1204,13 @@ func decideTLSPayloadRoute(cfg runtime.Config, surface string, initial []byte, c
 		decision.status = 408
 		decision.reason = "Request Timeout"
 	case detect.ClassTimeout:
+		if vmessFallbackSurface(surface) {
+			decision.target = cfg.VMessRawBackendAddr()
+			decision.route = "vmess-tcp"
+			decision.contextLabel = fmt.Sprintf("%s:vmess-tcp", surface)
+			decision.reason = "vmess_fallback_timeout"
+			break
+		}
 		decision.target = cfg.SSHBackendAddr()
 		decision.route = "ssh-timeout"
 		decision.contextLabel = fmt.Sprintf("%s:ssh-timeout", surface)
@@ -1216,10 +1227,26 @@ func decideTLSPayloadRoute(cfg runtime.Config, surface string, initial []byte, c
 		decision.route = "trojan-tcp"
 		decision.contextLabel = fmt.Sprintf("%s:trojan-tcp", surface)
 	default:
+		if vmessFallbackSurface(surface) {
+			decision.target = cfg.VMessRawBackendAddr()
+			decision.route = "vmess-tcp"
+			decision.contextLabel = fmt.Sprintf("%s:vmess-tcp", surface)
+			decision.reason = "vmess_fallback_unknown"
+			break
+		}
 		decision.route = "unknown"
 		decision.contextLabel = fmt.Sprintf("%s:unknown", surface)
 	}
 	return decision
+}
+
+func vmessFallbackSurface(surface string) bool {
+	switch strings.TrimSpace(surface) {
+	case "tls-inner", "http-inner":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveSNIRouteDecision(cfg runtime.Config, sni, surface string) (tlsRouteDecision, bool) {
@@ -1248,6 +1275,8 @@ func resolveSNIRouteDecision(cfg runtime.Config, sni, surface string) (tlsRouteD
 		decision.sendHTTP502 = true
 	case "vless_tcp":
 		decision.target = cfg.VLESSRawBackendAddr()
+	case "vmess_tcp":
+		decision.target = cfg.VMessRawBackendAddr()
 	case "trojan_tcp":
 		decision.target = cfg.TrojanRawBackendAddr()
 	default:
@@ -1310,6 +1339,8 @@ func backendLabel(cfg runtime.Config, target string) string {
 		return "ssh-ws"
 	case cfg.VLESSRawBackendAddr():
 		return "vless"
+	case cfg.VMessRawBackendAddr():
+		return "vmess"
 	case cfg.TrojanRawBackendAddr():
 		return "trojan"
 	default:
@@ -1602,6 +1633,7 @@ func backendHealthSnapshot(cfg runtime.Config) map[string]observability.BackendH
 	addCheck("ssh-tls", cfg.SSHTLSBackendAddr(), true)
 	addCheck("ssh-ws", cfg.SSHWSBackendAddr(), true)
 	addCheck("vless", cfg.VLESSRawBackendAddr(), true)
+	addCheck("vmess", cfg.VMessRawBackendAddr(), true)
 	addCheck("trojan", cfg.TrojanRawBackendAddr(), true)
 	for _, target := range uniquePassthroughTargets(cfg) {
 		addCheck(passthroughBackendHealthKey(target), target, true)
