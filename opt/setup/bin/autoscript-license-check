@@ -124,14 +124,8 @@ def load_config():
     for key, default in DEFAULTS.items():
         cfg[key] = os.environ.get(key, cfg.get(key, default))
     cfg["AUTOSCRIPT_LICENSE_CONFIG_FILE"] = os.environ.get("AUTOSCRIPT_LICENSE_CONFIG_FILE", env_cfg_file)
-    default_api_url = str(cfg.get("AUTOSCRIPT_LICENSE_DEFAULT_API_URL") or "").strip()
-    api_url = str(cfg.get("AUTOSCRIPT_LICENSE_API_URL") or "").strip()
-    if not default_api_url:
-        default_api_url = TRUSTED_DEFAULT_API_URL
-    if not api_url:
-        api_url = default_api_url
-    cfg["AUTOSCRIPT_LICENSE_DEFAULT_API_URL"] = default_api_url
-    cfg["AUTOSCRIPT_LICENSE_API_URL"] = api_url
+    cfg["AUTOSCRIPT_LICENSE_DEFAULT_API_URL"] = TRUSTED_DEFAULT_API_URL
+    cfg["AUTOSCRIPT_LICENSE_API_URL"] = TRUSTED_DEFAULT_API_URL
     cfg["runtime_enforce"] = parse_bool(cfg.get("AUTOSCRIPT_LICENSE_RUNTIME_ENFORCE"), True)
     cfg["cache_ttl_sec"] = parse_int(cfg.get("AUTOSCRIPT_LICENSE_CACHE_TTL_SEC"), 3600)
     cfg["runtime_interval_min"] = parse_int(cfg.get("AUTOSCRIPT_LICENSE_RUNTIME_INTERVAL_MIN"), 15)

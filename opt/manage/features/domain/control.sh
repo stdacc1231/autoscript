@@ -2018,7 +2018,7 @@ domain_control_guard_renew_if_needed() {
       fi
       compat_domain="$(head -n1 "${XRAY_DOMAIN_FILE}" 2>/dev/null | tr -d '\r' | awk '{print $1}' | tr -d ';' || true)"
       compat_domain="$(normalize_domain_token "${compat_domain}")"
-      if [[ "${rc}" == "0" && -n "${domain}" && "${compat_domain}" != "${domain}" && ! domain_control_cf_sync_pending_exists ]]; then
+      if [[ "${rc}" == "0" && -n "${domain}" && "${compat_domain}" != "${domain}" ]] && ! domain_control_cf_sync_pending_exists; then
         if confirm_yn_or_back "Compat domain file belum sinkron setelah guard renew. Sinkronkan sekarang?"; then
           domain_control_sync_compat_domain_now || rc=1
         else

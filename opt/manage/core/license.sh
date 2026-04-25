@@ -32,23 +32,10 @@ manage_license_guard_bin_path() {
 }
 
 manage_license_guard_api_url() {
-  local configured=""
+  local trusted_default=""
 
-  configured="${AUTOSCRIPT_LICENSE_API_URL:-}"
-  [[ -n "${configured}" ]] || configured="$(manage_license_config_get "AUTOSCRIPT_LICENSE_API_URL" 2>/dev/null || true)"
-  if [[ -n "${configured}" ]]; then
-    printf '%s\n' "${configured}"
-    return 0
-  fi
-
-  configured="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-}"
-  [[ -n "${configured}" ]] || configured="$(manage_license_config_get "AUTOSCRIPT_LICENSE_DEFAULT_API_URL" 2>/dev/null || true)"
-  if [[ -n "${configured}" ]]; then
-    printf '%s\n' "${configured}"
-    return 0
-  fi
-
-  manage_license_trusted_default_api_url
+  trusted_default="$(manage_license_trusted_default_api_url)"
+  printf '%s\n' "${trusted_default}"
 }
 
 manage_license_public_status_url() {

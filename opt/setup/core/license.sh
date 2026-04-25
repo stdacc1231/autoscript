@@ -45,23 +45,9 @@ autoscript_license_config_get() {
 }
 
 autoscript_license_resolve_api_url() {
-  local configured=""
-
-  configured="${AUTOSCRIPT_LICENSE_API_URL:-}"
-  [[ -n "${configured}" ]] || configured="$(autoscript_license_config_get "AUTOSCRIPT_LICENSE_API_URL" 2>/dev/null || true)"
-  if [[ -n "${configured}" ]]; then
-    printf '%s\n' "${configured}"
-    return 0
-  fi
-
-  configured="${AUTOSCRIPT_LICENSE_DEFAULT_API_URL:-}"
-  [[ -n "${configured}" ]] || configured="$(autoscript_license_config_get "AUTOSCRIPT_LICENSE_DEFAULT_API_URL" 2>/dev/null || true)"
-  if [[ -n "${configured}" ]]; then
-    printf '%s\n' "${configured}"
-    return 0
-  fi
-
-  autoscript_license_trusted_default_api_url
+  local trusted_default=""
+  trusted_default="$(autoscript_license_trusted_default_api_url)"
+  printf '%s\n' "${trusted_default}"
 }
 
 autoscript_license_resolve_bin_path() {
@@ -92,12 +78,10 @@ autoscript_license_exec_repo_bin() {
   local license_bin=""
   local api_url=""
   local config_file=""
-  local trusted_default_api_url=""
   license_bin="$(autoscript_license_resolve_bin_path)"
   api_url="$(autoscript_license_resolve_api_url)"
   config_file="$(autoscript_license_config_file_path)"
-  trusted_default_api_url="$(autoscript_license_trusted_default_api_url)"
-  AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${trusted_default_api_url}" \
+  AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${api_url}" \
   AUTOSCRIPT_LICENSE_API_URL="${api_url}" \
   AUTOSCRIPT_LICENSE_CACHE_TTL_SEC="${AUTOSCRIPT_LICENSE_CACHE_TTL_SEC:-3600}" \
   AUTOSCRIPT_LICENSE_RUNTIME_ENFORCE="${AUTOSCRIPT_LICENSE_RUNTIME_ENFORCE:-true}" \
