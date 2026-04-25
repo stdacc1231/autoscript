@@ -540,6 +540,8 @@ def evaluate_license(cfg, *, stage, allow_disabled):
             raise RuntimeError("Respons API tidak memiliki field 'allowed'")
         allowed = bool(response.get("allowed"))
         reason = str(response.get("reason") or "")
+        revoke_reason = str(response.get("revoke_reason") or "")
+        label = str(response.get("label") or "")
         ttl_sec = parse_int(response.get("cache_ttl_sec"), cfg["cache_ttl_sec"])
         public_ip = normalize_ipv4(response.get("public_ip")) or claimed_public_ip
         cache_expires_at = ""
@@ -558,6 +560,10 @@ def evaluate_license(cfg, *, stage, allow_disabled):
             cache_expires_at=cache_expires_at,
             http_status=200,
         )
+        if revoke_reason:
+            payload["revoke_reason"] = revoke_reason
+        if label:
+            payload["label"] = label
         save_state(cfg, payload)
         return allowed, payload
     except Exception as exc:
@@ -639,7 +645,13 @@ def print_status_payload(state):
 
     print(f"Status : {state.get('status', '-')}")
     print(f"Reason : {state.get('reason', '-')}")
-    print(f"IP     : {state.get('public_ip', '-')}")
+    
+    revoke_reason = state.get('revoke_reason')
+    if revoke_reason:
+        print(f"Detail : {revoke_reason}")
+
+    label = state.get('label')
+    print(f"IP     : {state.get('public_ip', '-')}{f' ({label})' if label else ''}")
     print(f"Until  : {state.get('cache_expires_at', '-') or '-'}")
     print(f"Next   : {next_action_for_state(state)}")
     return 0
