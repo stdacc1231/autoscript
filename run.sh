@@ -55,6 +55,8 @@ RUN_FALLBACK_REQUIRED_FILES=(
   "opt/setup/install/sshws.sh"
   "opt/setup/bin/ssh-expired-cleaner.py"
   "opt/setup/bin/backup-manage.py"
+  "opt/setup/install/zivpn.sh"
+  "opt/setup/bin/zivpn-password-sync.py"
   "opt/setup/templates/systemd/ssh-expired-cleaner.service"
   "opt/setup/templates/systemd/ssh-expired-cleaner.timer"
   "opt/setup/templates/config/backup-cloud.env"
