@@ -146,14 +146,14 @@ ssh_state_dirs_prepare() {
 }
 
 zivpn_runtime_available() {
-  [[ -x "${ZIVPN_SYNC_BIN}" ]] || return 1
-  [[ -f "/etc/systemd/system/${ZIVPN_SERVICE}" || -f "/lib/systemd/system/${ZIVPN_SERVICE}" || -f "${ZIVPN_CONFIG_FILE}" ]] || return 1
+  [[ -x "${ZIVPN_SYNC_BIN:-}" ]] || return 1
+  [[ -f "/etc/systemd/system/${ZIVPN_SERVICE:-}" || -f "/lib/systemd/system/${ZIVPN_SERVICE:-}" || -f "${ZIVPN_CONFIG_FILE:-}" ]] || return 1
   return 0
 }
 
 zivpn_password_file() {
   local username="${1:-}"
-  printf '%s/%s.pass\n' "${ZIVPN_PASSWORDS_DIR}" "${username}"
+  printf '%s/%s.pass\n' "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" "${username}"
 }
 
 zivpn_user_password_synced() {
@@ -177,14 +177,14 @@ zivpn_password_read() {
 zivpn_sync_runtime_now() {
   zivpn_runtime_available || return 1
   "${ZIVPN_SYNC_BIN}" \
-    --config "${ZIVPN_CONFIG_FILE}" \
-    --passwords-dir "${ZIVPN_PASSWORDS_DIR}" \
-    --listen ":${ZIVPN_LISTEN_PORT}" \
-    --cert "${ZIVPN_CERT_FILE}" \
-    --key "${ZIVPN_KEY_FILE}" \
-    --obfs "${ZIVPN_OBFS}" \
+    --config "${ZIVPN_CONFIG_FILE:-/etc/zivpn/config.json}" \
+    --passwords-dir "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" \
+    --listen ":${ZIVPN_LISTEN_PORT:-5667}" \
+    --cert "${ZIVPN_CERT_FILE:-/etc/zivpn/zivpn.crt}" \
+    --key "${ZIVPN_KEY_FILE:-/etc/zivpn/zivpn.key}" \
+    --obfs "${ZIVPN_OBFS:-zivpn}" \
     --account-dir "${SSH_ACCOUNT_DIR}" \
-    --service "${ZIVPN_SERVICE}" \
+    --service "${ZIVPN_SERVICE:-zivpn.service}" \
     --sync-service-state >/dev/null 2>&1
 }
 
@@ -193,7 +193,7 @@ zivpn_store_user_password() {
   local password="${2:-}"
   local dst tmp
   [[ -n "${username}" && -n "${password}" ]] || return 1
-  install -d -m 700 "${ZIVPN_PASSWORDS_DIR}"
+  install -d -m 700 "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}"
   dst="$(zivpn_password_file "${username}")"
   tmp="$(mktemp "${TMPDIR:-/tmp}/zivpn-pass.XXXXXX")" || return 1
   if ! printf '%s\n' "${password}" > "${tmp}"; then

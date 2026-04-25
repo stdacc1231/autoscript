@@ -1770,7 +1770,7 @@ PUBLIC_PATHS = {
   "vmess": {"ws": "/vmess-ws", "httpupgrade": "/vmess-hup", "xhttp": "/vmess-xhttp", "grpc": "vmess-grpc"},
   "trojan": {"ws": "/trojan-ws", "httpupgrade": "/trojan-hup", "xhttp": "/trojan-xhttp", "grpc": "trojan-grpc"},
 }
-TCP_TLS_PROTOCOLS = {"vless", "trojan"}
+TCP_TLS_PROTOCOLS = {"vless", "vmess", "trojan"}
 tcp_tls_host = domain
 
 
@@ -2391,7 +2391,7 @@ PUBLIC_PATHS = {
   "vmess": {"ws": "/vmess-ws", "httpupgrade": "/vmess-hup", "xhttp": "/vmess-xhttp", "grpc": "vmess-grpc"},
   "trojan": {"ws": "/trojan-ws", "httpupgrade": "/trojan-hup", "xhttp": "/trojan-xhttp", "grpc": "trojan-grpc"},
 }
-TCP_TLS_PROTOCOLS = {"vless", "trojan"}
+TCP_TLS_PROTOCOLS = {"vless", "vmess", "trojan"}
 tcp_tls_host = domain
 
 
