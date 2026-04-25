@@ -19,8 +19,7 @@ NGINX_CONF = Path("/etc/nginx/conf.d/xray.conf")
 
 XRAY_PROTOCOLS = ("vless", "vmess", "trojan")
 SSH_PROTOCOL = "ssh"
-OPENVPN_POLICY_PROTOCOL = "openvpn"
-QAC_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL, OPENVPN_POLICY_PROTOCOL)
+QAC_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL,)
 
 PORTAL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{10,64}$")
 XRAY_EMAIL_RE = re.compile(r"(?:email|user)\s*[:=]\s*([A-Za-z0-9._%+-]{1,128}@[A-Za-z0-9._-]{1,128})")
@@ -125,14 +124,6 @@ ACCESS_DETAIL_FIELDS: dict[str, tuple[str, ...]] = {
         "BadVPN UDPGW",
         "SSH WS Path",
         "SSH WS Path Alt",
-    ),
-    OPENVPN_POLICY_PROTOCOL: (
-        "OpenVPN WS Port",
-        "OpenVPN TCP",
-        "Alt Port SSL/TLS",
-        "Alt Port HTTP",
-        "OpenVPN WS Path",
-        "OpenVPN WS Path Alt",
     ),
 }
 
@@ -546,22 +537,6 @@ def _ssh_active_ip(username: str) -> str:
     return best_ip
 
 
-def _openvpn_active_ip(payload: dict[str, Any]) -> str:
-    status = payload.get("status") if isinstance(payload.get("status"), dict) else {}
-    active_total = max(0, _to_int(status.get("active_sessions_openvpn"), 0))
-    if active_total <= 0:
-        active_total = max(0, _to_int(status.get("active_sessions_total"), 0))
-    if active_total <= 0:
-        return "-"
-    raw_ips = status.get("distinct_ips_openvpn")
-    if not isinstance(raw_ips, list) or not raw_ips:
-        raw_ips = status.get("distinct_ips")
-    if not isinstance(raw_ips, list):
-        return "-"
-    ips = [str(item).strip() for item in raw_ips if str(item).strip()]
-    return ", ".join(ips[:3]) if ips else "-"
-
-
 def _portal_account_status(payload: dict[str, Any]) -> tuple[str, str]:
     status = payload.get("status") if isinstance(payload.get("status"), dict) else {}
     expired_date = _parse_date_only(payload.get("expired_at"))
@@ -952,9 +927,6 @@ def _access_summary(
     elif proto == SSH_PROTOCOL:
         ports = _field_lookup(fields, "SSH WS Port", "SSH Direct Port") or derived.get("ports", "-") or "443, 80"
         path = _field_lookup(fields, "SSH WS Path") or derived.get("path", "-") or "-"
-    elif proto == OPENVPN_POLICY_PROTOCOL:
-        ports = _field_lookup(fields, "OpenVPN WS Port", "OpenVPN TCP") or derived.get("ports", "-") or "443, 80"
-        path = _field_lookup(fields, "OpenVPN WS Path") or derived.get("path", "-") or "-"
     else:
         ports = "-"
         path = "-"
@@ -979,9 +951,7 @@ def _access_detail_items(proto: str, username: str, fields: dict[str, str] | Non
 
 
 def _portal_credentials(proto: str, username: str, fields: dict[str, str] | None = None) -> dict[str, str]:
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        bundle_fields = _account_info_bundle(SSH_PROTOCOL, username).get("fields") or {}
-    elif proto == SSH_PROTOCOL:
+    if proto == SSH_PROTOCOL:
         bundle_fields = fields if isinstance(fields, dict) else (_account_info_bundle(proto, username).get("fields") or {})
     else:
         return {"username": "", "password": "", "available": ""}
@@ -1021,9 +991,6 @@ def build_public_account_summary(token: str) -> dict[str, Any] | None:
 
     if proto == SSH_PROTOCOL:
         active_ip = _ssh_active_ip(username)
-        active_ip_mode = "runtime" if active_ip != "-" else "none"
-    elif proto == OPENVPN_POLICY_PROTOCOL:
-        active_ip = _openvpn_active_ip(payload)
         active_ip_mode = "runtime" if active_ip != "-" else "none"
     else:
         active_ip, active_ip_updated = _xray_last_seen_ip(str(payload.get("username") or f"{username}@{proto}"))

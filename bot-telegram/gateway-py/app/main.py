@@ -118,11 +118,10 @@ XRAY_USER_MENU_ID = "22"
 SSH_USER_MENU_ID = "23"
 XRAY_QAC_MENU_ID = "24"
 SSH_QAC_MENU_ID = "25"
-OPENVPN_QAC_MENU_ID = "44"
 BACKUP_MENU_ID = "32"
 SSH_NETWORK_MENU_IDS = {"34", "37", "40", "41"}
 DELETE_PICK_MENU_IDS = {XRAY_USER_MENU_ID, SSH_USER_MENU_ID}
-QAC_MENU_IDS = {XRAY_QAC_MENU_ID, SSH_QAC_MENU_ID, OPENVPN_QAC_MENU_ID}
+QAC_MENU_IDS = {XRAY_QAC_MENU_ID, SSH_QAC_MENU_ID}
 ACCOUNT_PICK_ACTION_IDS = {"account_info", "delete_user", "extend_expiry", "reset_password", "reset_credential"}
 ROOT_DOMAIN_FALLBACK_OPTIONS = (
     "vyxara1.web.id",
@@ -559,8 +558,6 @@ def _safe_int(raw: str, default: int = 0) -> int:
 def _menu_protocol_scope(menu_id: str) -> tuple[str, ...]:
     if menu_id in {XRAY_USER_MENU_ID, XRAY_QAC_MENU_ID}:
         return XRAY_PROTOCOLS
-    if menu_id == OPENVPN_QAC_MENU_ID:
-        return ("openvpn",)
     if menu_id in {SSH_USER_MENU_ID, SSH_QAC_MENU_ID} | SSH_NETWORK_MENU_IDS:
         return ("ssh",)
     return USER_PROTOCOLS
@@ -571,7 +568,6 @@ def _qac_picker_title(menu_id: str) -> str:
         menu_id,
         xray_qac_menu_id=XRAY_QAC_MENU_ID,
         ssh_qac_menu_id=SSH_QAC_MENU_ID,
-        openvpn_qac_menu_id=OPENVPN_QAC_MENU_ID,
     )
 
 
@@ -643,7 +639,6 @@ def _qac_menu_text(menu: MenuSpec, selection: dict, summary: dict[str, str] | No
         total_pages,
         xray_qac_menu_id=XRAY_QAC_MENU_ID,
         ssh_qac_menu_id=SSH_QAC_MENU_ID,
-        openvpn_qac_menu_id=OPENVPN_QAC_MENU_ID,
     )
 
 
@@ -685,7 +680,6 @@ def _qac_pick_text(menu_id: str, page: int, users: list[dict[str, str]]) -> str:
         delete_pick_page_size=DELETE_PICK_PAGE_SIZE,
         xray_qac_menu_id=XRAY_QAC_MENU_ID,
         ssh_qac_menu_id=SSH_QAC_MENU_ID,
-        openvpn_qac_menu_id=OPENVPN_QAC_MENU_ID,
     )
 
 

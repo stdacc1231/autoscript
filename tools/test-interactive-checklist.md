@@ -27,7 +27,7 @@ Verifikasi minimum:
 Flow yang wajib dicoba bila area terkait berubah:
 - `1) Xray Users`: create, detail, extend expiry, delete
 - `2) SSH Users`: create, reset password, delete
-- `4) SSH & OpenVPN QAC`: quota/speed/sync metadata
+- `4) SSH QAC`: quota/speed/sync metadata
 - `8) Domain Control`: set domain, renew/check cert, refresh `ACCOUNT INFO`
 - `11) Maintenance`: status, restart service, lihat log
 - `13) Tools`: Telegram Bot, WARP Tier, Backup/Restore

@@ -249,183 +249,6 @@ zivpn_account_info_enabled() {
   return 0
 }
 
-openvpn_runtime_available() {
-  [[ -x "${OPENVPN_MANAGE_BIN}" ]] || return 1
-  [[ -f "${OPENVPN_CONFIG_ENV_FILE}" ]] || return 1
-  return 0
-}
-
-openvpn_env_value() {
-  local key="${1:-}"
-  local default_value="${2:-}"
-  [[ -n "${key}" ]] || {
-    printf '%s\n' "${default_value}"
-    return 0
-  }
-  if [[ -r "${OPENVPN_CONFIG_ENV_FILE}" ]]; then
-    local value=""
-    value="$(awk -F= -v k="${key}" '$1==k {print substr($0, index($0, "=")+1); exit}' "${OPENVPN_CONFIG_ENV_FILE}" | tr -d '\r' || true)"
-    if [[ -n "${value}" ]]; then
-      printf '%s\n' "${value}"
-      return 0
-    fi
-  fi
-  printf '%s\n' "${default_value}"
-}
-
-openvpn_profile_file() {
-  local username="${1:-}"
-  local profile_dir
-  profile_dir="$(openvpn_env_value "OPENVPN_PROFILE_DIR" "${OPENVPN_PROFILE_DIR}")"
-  printf '%s/%s@openvpn.ovpn\n' "${profile_dir}" "${username}"
-}
-
-openvpn_metadata_file() {
-  local username="${1:-}"
-  local metadata_dir
-  metadata_dir="$(openvpn_env_value "OPENVPN_METADATA_DIR" "${OPENVPN_METADATA_DIR}")"
-  printf '%s/%s@openvpn.json\n' "${metadata_dir}" "${username}"
-}
-
-openvpn_public_host() {
-  local host
-  host="$(normalize_domain_token "$(openvpn_env_value "OPENVPN_PUBLIC_HOST" "")")"
-  [[ -n "${host}" ]] || host="$(normalize_domain_token "$(detect_domain 2>/dev/null || true)")"
-  [[ -n "${host}" ]] || host="$(main_info_ip_quiet_get 2>/dev/null || true)"
-  [[ -n "${host}" ]] || host="$(detect_public_ip 2>/dev/null || true)"
-  printf '%s\n' "${host:--}"
-}
-
-openvpn_public_tcp_port() {
-  openvpn_env_value "OPENVPN_PUBLIC_PORT_TCP" "$(openvpn_env_value "OPENVPN_PORT_TCP" "1194")"
-}
-
-openvpn_public_tcp_ports_label() {
-  local tls_ports http_ports merged=() seen=() port
-  tls_ports="$(edge_runtime_public_tls_ports 2>/dev/null || echo "443 2053 2083 2087 2096 8443")"
-  http_ports="$(edge_runtime_public_http_ports 2>/dev/null || echo "80 8080 8880 2052 2082 2086 2095")"
-  for port in ${tls_ports} ${http_ports}; do
-    [[ "${port}" =~ ^[0-9]+$ ]] || continue
-    if [[ " ${seen[*]:-} " == *" ${port} "* ]]; then
-      continue
-    fi
-    seen+=("${port}")
-    merged+=("${port}")
-  done
-  if (( ${#merged[@]} > 0 )); then
-    printf '%s\n' "${merged[*]}" | sed 's/ /, /g'
-  else
-    printf '%s\n' "$(openvpn_public_tcp_port)"
-  fi
-}
-
-openvpn_primary_public_ports_label() {
-  local tls_ports http_ports primary="" port
-  if ! edge_runtime_enabled_for_public_ports; then
-    printf '%s\n' "$(openvpn_public_tcp_port)"
-    return 0
-  fi
-  tls_ports="$(edge_runtime_public_tls_ports 2>/dev/null || echo "443 2053 2083 2087 2096 8443")"
-  http_ports="$(edge_runtime_public_http_ports 2>/dev/null || echo "80 8080 8880 2052 2082 2086 2095")"
-  for port in ${tls_ports}; do
-    primary="${port}"
-    break
-  done
-  for port in ${http_ports}; do
-    if [[ -n "${primary}" && "${port}" != "${primary}" ]]; then
-      primary+=" ${port}"
-    elif [[ -z "${primary}" ]]; then
-      primary="${port}"
-    fi
-    break
-  done
-  if [[ -n "${primary}" ]]; then
-    printf '%s\n' "${primary}" | sed 's/ /, /g'
-  else
-    printf '%s\n' "-"
-  fi
-}
-
-openvpn_ws_public_path() {
-  local path
-  path="$(openvpn_env_value "OPENVPN_WS_PUBLIC_PATH" "")"
-  path="${path//$'\r'/}"
-  [[ -n "${path}" ]] || path="-"
-  [[ "${path}" == "-" ]] && { printf '%s\n' "${path}"; return 0; }
-  [[ "${path}" == /* ]] || path="/${path}"
-  printf '%s\n' "${path}"
-}
-
-openvpn_ws_public_alt_path() {
-  local path trimmed
-  path="$(openvpn_ws_public_path)"
-  [[ "${path}" == "-" ]] && { printf '%s\n' "-"; return 0; }
-  trimmed="${path#/}"
-  printf '/<bebas>/%s/<bebas>\n' "${trimmed}"
-}
-
-openvpn_manage_json() {
-  openvpn_runtime_available || return 1
-  "${OPENVPN_MANAGE_BIN}" --config "${OPENVPN_CONFIG_ENV_FILE}" "$@" 2>/dev/null
-}
-
-openvpn_manage_ok() {
-  local output="${1:-}"
-  python3 - <<'PY' "${output}"
-import json
-import sys
-
-raw = sys.argv[1]
-try:
-    payload = json.loads(raw or "{}")
-except Exception:
-    raise SystemExit(1)
-if not isinstance(payload, dict):
-    raise SystemExit(1)
-raise SystemExit(0 if bool(payload.get("ok", True)) else 1)
-PY
-}
-
-openvpn_download_link() {
-  local username="${1:-}"
-  local host
-  openvpn_runtime_available || return 0
-  [[ -n "${username}" ]] || return 0
-  host="$(openvpn_public_host)"
-  [[ -n "${host}" && "${host}" != "-" ]] || return 0
-  printf 'https://%s/ovpn/%s.ovpn\n' "${host}" "${username}"
-}
-
-openvpn_ensure_user_warn() {
-  local username="${1:-}"
-  local payload=""
-  openvpn_runtime_available || return 0
-  payload="$(openvpn_manage_json ensure-user --username "${username}")" || {
-    warn "OpenVPN linked profile gagal dibuat untuk '${username}'."
-    return 1
-  }
-  if ! openvpn_manage_ok "${payload}"; then
-    warn "OpenVPN linked profile gagal dibuat untuk '${username}'."
-    return 1
-  fi
-  return 0
-}
-
-openvpn_delete_user_warn() {
-  local username="${1:-}"
-  local payload=""
-  openvpn_runtime_available || return 0
-  payload="$(openvpn_manage_json delete-user --username "${username}")" || {
-    warn "OpenVPN linked profile gagal dihapus untuk '${username}'."
-    return 1
-  }
-  if ! openvpn_manage_ok "${payload}"; then
-    warn "OpenVPN linked profile gagal dihapus untuk '${username}'."
-    return 1
-  fi
-  return 0
-}
-
 ssh_user_state_file() {
   local username="${1:-}"
   printf '%s/%s@ssh.json\n' "${SSH_USERS_STATE_DIR}" "${username}"
@@ -468,20 +291,14 @@ ssh_account_info_file() {
 ssh_user_artifacts_cleanup_unlocked() {
   local username="${1:-}"
   local f=""
-  local openvpn_state_file=""
   local -a failed=()
-  openvpn_state_file="$(openvpn_qac_state_file_for_user "${username}" 2>/dev/null || true)"
   for f in \
     "$(ssh_user_state_file "${username}")" \
     "$(ssh_user_state_lock_file "${username}")" \
     "${SSH_USERS_STATE_DIR}/${username}.json" \
     "$(ssh_user_state_compat_lock_file "${username}")" \
     "$(ssh_account_info_file "${username}")" \
-    "${SSH_ACCOUNT_DIR}/${username}.txt" \
-    "$(openvpn_profile_file "${username}")" \
-    "$(openvpn_metadata_file "${username}")" \
-    "${openvpn_state_file}" \
-    "$( [[ -n "${openvpn_state_file}" ]] && quota_lock_file_path "${openvpn_state_file}" )"; do
+    "${SSH_ACCOUNT_DIR}/${username}.txt"; do
     [[ -e "${f}" || -L "${f}" ]] || continue
     rm -f "${f}" >/dev/null 2>&1 || true
     if [[ -e "${f}" || -L "${f}" ]]; then
@@ -962,65 +779,6 @@ ssh_account_portal_link() {
   host="$(account_portal_public_host)"
   [[ -n "${host}" && "${host}" != "-" ]] || return 0
   printf 'https://%s/account/%s\n' "${host}" "${token}"
-}
-
-openvpn_account_portal_link() {
-  local username="${1:-}"
-  [[ -n "${username}" ]] || return 0
-  openvpn_runtime_available || return 0
-  need_python3
-  python3 - <<'PY' "${OPENVPN_CONFIG_ENV_FILE}" "${username}"
-import json
-import os
-import sys
-from pathlib import Path
-
-cfg_path = Path(sys.argv[1])
-username = sys.argv[2].strip()
-
-state_root = "/opt/quota/openvpn"
-host = ""
-if cfg_path.is_file():
-  try:
-    for raw in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-      line = raw.strip()
-      if not line or line.startswith("#") or "=" not in line:
-        continue
-      key, value = line.split("=", 1)
-      key = key.strip()
-      value = value.strip().strip('"').strip("'")
-      if key == "OPENVPN_STATE_DIR" and value:
-        state_root = value
-      elif key == "OPENVPN_PUBLIC_HOST" and value:
-        host = value
-  except Exception:
-    pass
-
-payload = {}
-for candidate in (Path(state_root) / f"{username}@openvpn.json", Path(state_root) / f"{username}.json"):
-  if not candidate.is_file():
-    continue
-  try:
-    loaded = json.loads(candidate.read_text(encoding="utf-8", errors="ignore"))
-  except Exception:
-    continue
-  if isinstance(loaded, dict):
-    payload = loaded
-    break
-
-token = str(payload.get("portal_token") or "").strip()
-if not token:
-  raise SystemExit(0)
-if not host:
-  host_file = Path("/etc/xray/domain")
-  if host_file.is_file():
-    try:
-      host = host_file.read_text(encoding="utf-8", errors="ignore").strip()
-    except Exception:
-      host = ""
-if host:
-  print(f"https://{host}/account/{token}")
-PY
 }
 
 sshws_probe_path_pick() {
@@ -1732,7 +1490,7 @@ PY
   ssh_alt_tls_ports_disp="$(ssh_alt_tls_public_ports_label)"
   ssh_alt_http_ports_disp="$(ssh_alt_http_public_ports_label)"
   badvpn_port_disp="$(badvpn_public_port_label)"
-  local zivpn_block="" openvpn_block=""
+  local zivpn_block=""
   account_info_labels=(
     "SSH WS Path"
     "SSH WS Path Alt"
@@ -1745,18 +1503,6 @@ PY
     "Portal SSH"
     "ZIVPN Password"
   )
-  if openvpn_runtime_available; then
-    account_info_labels+=(
-      "OpenVPN WS Path"
-      "OpenVPN WS Path Alt"
-      "OpenVPN WS Port"
-      "OpenVPN TCP"
-      "OpenVPN Link"
-      "Portal OpenVPN"
-      "Alt Port SSL/TLS"
-      "Alt Port HTTP"
-    )
-  fi
   running_label_width=0
   local label=""
   for label in "${account_info_labels[@]}"; do
@@ -1780,27 +1526,6 @@ PY
       printf -v zivpn_password_line '%-*s : %s' "${running_label_width}" "ZIVPN Password" "not synced to runtime"
     fi
     zivpn_block=$'\n'"=== ZIVPN UDP ==="$'\n'"${zivpn_password_line}"
-  fi
-  if openvpn_runtime_available; then
-    local openvpn_ws_path openvpn_ws_alt_path
-    local openvpn_ws_path_line openvpn_ws_alt_line openvpn_ws_port_line
-    local openvpn_tcp_line openvpn_link_line openvpn_portal_line openvpn_alt_tls_line openvpn_alt_http_line openvpn_link_disp openvpn_portal_disp openvpn_primary_ports_disp
-    openvpn_ws_path="$(openvpn_ws_public_path)"
-    openvpn_ws_alt_path="$(openvpn_ws_public_alt_path)"
-    openvpn_primary_ports_disp="$(openvpn_primary_public_ports_label)"
-    openvpn_link_disp="$(openvpn_download_link "${username}")"
-    openvpn_portal_disp="$(openvpn_account_portal_link "${username}")"
-    [[ -n "${openvpn_link_disp}" ]] || openvpn_link_disp="-"
-    [[ -n "${openvpn_portal_disp}" ]] || openvpn_portal_disp="-"
-    printf -v openvpn_ws_path_line '%-*s : %s' "${running_label_width}" "OpenVPN WS Path" "${openvpn_ws_path}"
-    printf -v openvpn_ws_alt_line '%-*s : %s' "${running_label_width}" "OpenVPN WS Path Alt" "${openvpn_ws_alt_path}"
-    printf -v openvpn_ws_port_line '%-*s : %s' "${running_label_width}" "OpenVPN WS Port" "${openvpn_primary_ports_disp}"
-    printf -v openvpn_tcp_line '%-*s : %s' "${running_label_width}" "OpenVPN TCP" "${openvpn_primary_ports_disp}"
-    printf -v openvpn_link_line '%-*s : %s' "${running_label_width}" "OpenVPN Link" "${openvpn_link_disp}"
-    printf -v openvpn_portal_line '%-*s : %s' "${running_label_width}" "Portal OpenVPN" "${openvpn_portal_disp}"
-    printf -v openvpn_alt_tls_line '%-*s : %s' "${running_label_width}" "Alt Port SSL/TLS" "${ssh_alt_tls_ports_disp}"
-    printf -v openvpn_alt_http_line '%-*s : %s' "${running_label_width}" "Alt Port HTTP" "${ssh_alt_http_ports_disp}"
-    openvpn_block=$'\n'"=== OPENVPN ==="$'\n'"${openvpn_ws_path_line}"$'\n'"${openvpn_ws_alt_line}"$'\n'"${openvpn_ws_port_line}"$'\n'"${openvpn_tcp_line}"$'\n'"${openvpn_link_line}"$'\n'"${openvpn_portal_line}"$'\n'"${openvpn_alt_tls_line}"$'\n'"${openvpn_alt_http_line}"$'\n'
   fi
   local tmp_acc_file=""
   mkdir -p "$(dirname "${acc_file}")" 2>/dev/null || return 1
@@ -1832,7 +1557,6 @@ ${running_ssh_alt_http}
 ${running_badvpn}
 ${running_portal_ssh}
 ${zivpn_block}
-${openvpn_block}
 EOF
   then
     rm -f "${tmp_acc_file}" >/dev/null 2>&1 || true
@@ -2789,9 +2513,6 @@ ssh_add_txn_recover_dir() {
   if (( ${#notes[@]} == 0 )) && ! zivpn_sync_user_password_warn "${username}" "${password}"; then
     notes+=("sinkronisasi password ZIVPN gagal")
   fi
-  if (( ${#notes[@]} == 0 )) && ! openvpn_ensure_user_warn "${username}"; then
-    notes+=("linked profile OpenVPN gagal dibuat")
-  fi
   if (( ${#notes[@]} == 0 )) && ! ssh_qac_enforce_now_warn "${username}"; then
     notes+=("enforcement awal SSH gagal")
   fi
@@ -2859,9 +2580,6 @@ ssh_delete_user_cleanup_after_linux_delete() {
 
   if [[ -n "${zivpn_file}" ]] && ! zivpn_remove_user_password_warn "${username}"; then
     notes+=("cleanup ZIVPN gagal")
-  fi
-  if ! openvpn_delete_user_warn "${username}"; then
-    notes+=("cleanup OpenVPN gagal")
   fi
 
   cleanup_failed="$(ssh_user_artifacts_cleanup_locked "${username}" 2>/dev/null || true)"
@@ -3466,11 +3184,6 @@ ssh_add_user_apply_locked_inner() {
   fi
   if ! usermod -s /bin/bash "${username}" >/dev/null 2>&1; then
     ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal mengaktifkan shell login user '${username}'." "${password}" "true" "true" "${add_txn_dir}"
-    pause
-    return 1
-  fi
-  if ! openvpn_ensure_user_warn "${username}"; then
-    ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal membuat linked profile OpenVPN user '${username}'." "${password}" "true" "true" "${add_txn_dir}"
     pause
     return 1
   fi

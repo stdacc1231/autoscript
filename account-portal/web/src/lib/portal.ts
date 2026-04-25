@@ -7,7 +7,6 @@ export function protocolLabel(protocol: string) {
     vmess: "VMESS",
     trojan: "TROJAN",
     ssh: "SSH",
-    openvpn: "OPENVPN",
   }
 
   return labels[current] ?? current.toUpperCase() ?? "-"

@@ -1,5 +1,5 @@
 [Unit]
-Description=Delete expired SSH-linked accounts and linked OpenVPN artifacts
+Description=Delete expired SSH-linked accounts and linked runtime artifacts
 After=network-online.target bot-telegram-backend.service
 Wants=network-online.target
 

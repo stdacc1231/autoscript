@@ -5,7 +5,7 @@
 `run.sh` adalah launcher installer, `setup.sh` menangani provisioning VPS, dan `manage.sh` adalah CLI operasional setelah instalasi. Simpan logic installer di `opt/setup/`, logic CLI runtime di `opt/manage/`, kode bot Telegram di `bot-telegram/`, source edge gateway di `opt/edge/go/`, dan utilitas tambahan di `tools/`.
 
 Modul shell dipisah per domain:
-- `opt/setup/install/*.sh`: langkah provisioning seperti `xray.sh`, `sshws.sh`, `openvpn.sh`
+- `opt/setup/install/*.sh`: langkah provisioning seperti `xray.sh` dan `sshws.sh`
 - `opt/manage/features/*` dan subfoldernya: action menu dan operasi runtime
 - `opt/setup/templates/` dan `opt/setup/bin/`: template config, unit systemd, dan helper script
 
@@ -42,7 +42,7 @@ Untuk perubahan menu atau flow yang terlihat user, verifikasi baik jalur repo lo
 
 ## Panduan Commit dan Pull Request
 
-Riwayat commit repo ini memakai subjek singkat berbentuk imperatif, misalnya `Fix OpenVPN QAC runtime sync and metadata drift` atau `Harden Telegram bot sensitive actions`. Ikuti pola itu: satu baris singkat, diawali aksi, dan jelas area perubahannya.
+Riwayat commit repo ini memakai subjek singkat berbentuk imperatif, misalnya `Fix SSHWS runtime sync and metadata drift` atau `Harden Telegram bot sensitive actions`. Ikuti pola itu: satu baris singkat, diawali aksi, dan jelas area perubahannya.
 
 PR harus menyertakan ringkasan perubahan, area yang terdampak, perintah test manual yang dijalankan, dan screenshot hanya jika output menu/Telegram berubah secara material.
 

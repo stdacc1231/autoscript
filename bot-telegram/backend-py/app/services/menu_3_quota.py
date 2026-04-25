@@ -11,8 +11,7 @@ from ..utils.validators import (
 USER_PROTOCOLS = tuple(system.USER_PROTOCOLS)
 XRAY_ONLY_PROTOCOLS = tuple(system.XRAY_PROTOCOLS)
 SSH_ONLY_PROTOCOLS = (system.SSH_PROTOCOL,)
-OPENVPN_ONLY_PROTOCOLS = (getattr(system, "OPENVPN_POLICY_PROTOCOL", "openvpn"),)
-QAC_PROTOCOLS = tuple(dict.fromkeys((*USER_PROTOCOLS, *OPENVPN_ONLY_PROTOCOLS)))
+QAC_PROTOCOLS = USER_PROTOCOLS
 PASSWORD_VISIBLE_PROTOCOLS = {system.SSH_PROTOCOL}
 
 
@@ -20,7 +19,6 @@ def _scope_title(scope: str, label: str) -> str:
     prefix = {
         "xray": "Xray QAC",
         "ssh": "SSH QAC",
-        "openvpn": "OpenVPN QAC",
     }.get(scope, "Quota & Access Control")
     return f"{prefix} - {label}" if label else prefix
 
@@ -30,13 +28,11 @@ def _scope_protocols(scope: str) -> tuple[str, ...]:
         return XRAY_ONLY_PROTOCOLS
     if scope == "ssh":
         return SSH_ONLY_PROTOCOLS
-    if scope == "openvpn":
-        return OPENVPN_ONLY_PROTOCOLS
     return QAC_PROTOCOLS
 
 
 def _ip_limit_label(scope: str) -> str:
-    return "IP Limit" if scope == "openvpn" else "IP/Login Limit"
+    return "IP/Login Limit"
 
 
 def _resolve_proto(params: dict, title: str, scope: str) -> tuple[bool, str | dict]:
@@ -53,14 +49,6 @@ def _proto_requires_sensitive_output(proto: str) -> bool:
 def _attach_account_download(proto: str, username: str, title: str, message: str) -> dict:
     data: dict[str, object] = {}
     proto_n = str(proto).strip().lower()
-    if proto_n == getattr(system, "OPENVPN_POLICY_PROTOCOL", "openvpn"):
-        ok_download, download_or_err = system_mutations.op_openvpn_profile_file_download(username)
-        if ok_download and isinstance(download_or_err, dict):
-            data["download_file"] = download_or_err
-        else:
-            message = f"{message}\n- Warning: profile OpenVPN terbaru tidak bisa diunduh ({download_or_err})"
-        return ok_response(title, message, data=data)
-
     download_proto = proto_n
     ok_download, download_or_err = system_mutations.op_user_account_file_download(download_proto, username)
     if ok_download and isinstance(download_or_err, dict):

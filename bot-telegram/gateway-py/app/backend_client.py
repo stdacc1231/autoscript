@@ -24,7 +24,6 @@ ACTION_TIMEOUTS_SECONDS: dict[str, float] = {
     "31:restart_wireproxy": 90.0,
     "31:restart_edge_gateway": 90.0,
     "31:restart_badvpn": 90.0,
-    "31:restart_openvpn": 120.0,
     "31:restart_xray_daemons": 120.0,
     "31:restart_sshws_stack": 120.0,
     "32:create_backup": 240.0,

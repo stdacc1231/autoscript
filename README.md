@@ -1,11 +1,11 @@
 # Autoscript
 
-> Installer, runtime, dan panel operasional harian untuk stack `Xray-core`, `SSH WS`, `OpenVPN`, `Edge Gateway`, `WARP`, dan bot `Telegram` di VPS Linux.
+> Installer, runtime, dan panel operasional harian untuk stack `Xray-core`, `SSH WS`, `ZIVPN`, `Edge Gateway`, `WARP`, dan bot `Telegram` di VPS Linux.
 
 Autoscript dirancang untuk operator yang ingin satu repo untuk:
 - bootstrap server dari nol
 - mengelola user `Xray` dan `SSH` dari CLI modular
-- menautkan `OpenVPN` langsung ke lifecycle akun `SSH`
+- menautkan `ZIVPN` langsung ke lifecycle akun `SSH`
 - menjalankan ingress publik berbasis `Go edge-mux`
 - mengoperasikan `WARP`, `BadVPN`, `Domain Guard`, dan bot `Telegram`
 
@@ -59,7 +59,6 @@ Internet / Cloudflare
 | `sshws-dropbear` | backend SSH direct/dropbear | internal |
 | `sshws-stunnel` | backend SSH SSL/TLS | internal |
 | `sshws-proxy` | Websocket Proxy (Go) untuk backend SSH WS | internal |
-| `openvpn-server@autoscript-tcp` | OpenVPN TCP classic yang terikat ke akun SSH | publik |
 | `badvpn-udpgw` | UDPGW lokal untuk payload/game tertentu | internal |
 | `wireproxy` / `warp-svc` | runtime `WARP Free/Plus` atau `Zero Trust` | sesuai mode aktif |
 | `xray-domain-guard` | guardrail domain, TLS, dan health check | maintenance |
@@ -70,7 +69,7 @@ Internet / Cloudflare
 - `VLESS`, `VMess`, `Trojan`
 - transport `XHTTP`, `WS`, `HTTPUpgrade`, `gRPC`, `TCP+TLS`
 - `SSH WS`, `SSH SSL/TLS`, `SSH Direct`
-- `OpenVPN TCP`
+- `ZIVPN`
 - `WARP Free/Plus`, `WARP Zero Trust`, `BadVPN UDPGW`
 
 ## Port Publik
@@ -105,8 +104,7 @@ Internet / Cloudflare
 | `Trojan HUP` | `443, 80` + alt port Cloudflare |
 | `Trojan gRPC` | `443, 80` + alt port Cloudflare |
 | `Trojan TCP+TLS` | `443, 80` + alt port Cloudflare |
-| `OpenVPN TCP` | `443, 80` + alt port Cloudflare |
-| `OpenVPN WS` | `443, 80` + alt port Cloudflare |
+| `ZIVPN` | `443, 80` + alt port Cloudflare |
 
 ## Path Runtime
 
@@ -118,7 +116,6 @@ Jangan gunakan path internal acak backend `Xray` atau proxy lokal karena nilainy
 | Transport | Path utama | Varian alt yang didukung | Catatan |
 | --- | --- | --- | --- |
 | `SSH WS` | `/<token-hex-10>` atau `/diagnostic-probe` | `/<bebas>/<token-hex-10>/<bebas>` dan `/<bebas>/diagnostic-probe/<bebas>` | token SSH WS adalah 10 karakter heksadesimal |
-| `OpenVPN WS` | `/<token-openvpn>` | `/<bebas>/<token-openvpn>/<bebas>` | token live mengikuti `OPENVPN_WS_PUBLIC_PATH` |
 | `VLESS WS` | `/vless-ws` | `/<bebas>/vless-ws` atau `/<bebas>/vless-ws/<bebas>` | path publik stabil |
 | `VLESS HUP` | `/vless-hup` | `/<bebas>/vless-hup` atau `/<bebas>/vless-hup/<bebas>` | path publik stabil |
 | `VLESS XHTTP` | `/vless-xhttp` | `/<bebas>/vless-xhttp` atau `/<bebas>/vless-xhttp/<bebas>` | path publik stabil |
@@ -138,12 +135,12 @@ Contoh path internal yang tidak perlu dipakai operator:
 - `Xray WS/HUP` memakai path acak seperti `/h5faaachbphar0`
 - `Xray gRPC` memakai service name acak seperti `24j1m934rp8m`
 - `SSH WS` backend proxy tetap listen internal di `127.0.0.1:10015`
-- `OpenVPN WS` backend proxy tetap listen internal di `127.0.0.1:10016`
+- `ZIVPN` backend runtime tetap mengikuti konfigurasi service aktif di host.
 
 Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 
 ## Portal Info Akun
-- Setiap akun `Xray`, `SSH`, dan `OpenVPN` sekarang bisa punya link portal read-only sendiri.
+- Setiap akun `Xray` dan `SSH` sekarang bisa punya link portal read-only sendiri.
 - Portal ini berdiri sebagai service mandiri di host, tidak menumpang backend bot Telegram.
 - Format URL:
   - `https://<domain-vps>/account/<token>`
@@ -157,7 +154,6 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 - Link portal ikut ditulis ke:
   - `XRAY ACCOUNT INFO`
   - `SSH ACCOUNT INFO`
-  - blok `OpenVPN` pada `SSH ACCOUNT INFO`
 
 ## Port Internal
 
@@ -167,7 +163,6 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 | `sshws-dropbear` | `127.0.0.1:22022` | backend SSH direct |
 | `sshws-stunnel` | `127.0.0.1:22443` | backend SSH TLS |
 | `sshws-proxy` | `127.0.0.1:10015` | Websocket Proxy (Go) untuk SSH WS |
-| `ovpn-ws-proxy` | `127.0.0.1:10016` | Websocket Proxy (Go) untuk OpenVPN WS |
 | `account-portal` | `127.0.0.1:7082` | website read-only info akun |
 | `bot-telegram-backend` | `127.0.0.1:7081` | API internal bot Telegram |
 | `edge-mux metrics` | `127.0.0.1:9910` | metrics dan status edge |
@@ -187,7 +182,7 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 1) Xray Users
 2) SSH Users
 3) Xray QAC
-4) SSH & OpenVPN QAC
+4) SSH QAC
 5) Xray Network
 6) SSH Network
 7) Adblocker

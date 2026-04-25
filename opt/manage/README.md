@@ -42,12 +42,11 @@ opt/manage/
 
 ## Peta Source of Truth
 
-- `opt/manage/features/users.sh`: aggregator live untuk `1) Xray Users`, `2) SSH Users`, `3) Xray QAC`, dan `4) SSH/OpenVPN QAC`
+- `opt/manage/features/users.sh`: aggregator live untuk `1) Xray Users`, `2) SSH Users`, `3) Xray QAC`, dan `4) SSH QAC`
 - `opt/manage/features/users/xray_users.sh`: source of truth `Xray Users`
 - `opt/manage/features/users/ssh_users.sh`: source of truth `SSH Users`
 - `opt/manage/features/users/xray_qac.sh`: source of truth `Xray QAC`
 - `opt/manage/features/users/ssh_qac.sh`: source of truth `SSH QAC`
-- `opt/manage/features/users/openvpn_qac.sh`: source of truth `OpenVPN QAC`
 - `opt/manage/features/domain.sh`: aggregator live untuk `8) Domain Control`
 - `opt/manage/features/domain/cloudflare.sh`: helper Cloudflare/DNS domain
 - `opt/manage/features/domain/control.sh`: source of truth `Domain Control`

@@ -29,7 +29,6 @@ WIREPROXY_CONF = Path("/etc/wireproxy/config.conf")
 EDGE_RUNTIME_ENV_FILE = Path("/etc/default/edge-runtime")
 BADVPN_RUNTIME_ENV_FILE = Path("/etc/default/badvpn-udpgw")
 SSHWS_RUNTIME_ENV_FILE = Path("/etc/default/sshws-runtime")
-OPENVPN_CONFIG_ENV_FILE = Path("/etc/autoscript/openvpn/config.env")
 XRAY_DOMAIN_GUARD_BIN = Path("/usr/local/bin/xray-domain-guard")
 XRAY_DOMAIN_GUARD_CONFIG_FILE = Path("/etc/xray-domain-guard/config.env")
 XRAY_DOMAIN_GUARD_LOG_FILE = Path("/var/log/xray-domain-guard/domain-guard.log")
@@ -51,9 +50,8 @@ READONLY_GEOSITE_DOMAINS = (
 )
 XRAY_PROTOCOLS = ("vless", "vmess", "trojan")
 SSH_PROTOCOL = "ssh"
-OPENVPN_POLICY_PROTOCOL = "openvpn"
 USER_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL,)
-QAC_PROTOCOLS = USER_PROTOCOLS + (OPENVPN_POLICY_PROTOCOL,)
+QAC_PROTOCOLS = USER_PROTOCOLS
 PROTOCOLS = XRAY_PROTOCOLS
 QUOTA_UNIT_DECIMAL = {"decimal", "gb", "1000", "gigabyte"}
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -73,8 +71,6 @@ ALLOWED_SERVICES = (
     "sshws-stunnel",
     "sshws-proxy",
     "sshws-qac-enforcer.timer",
-    "openvpn-server@autoscript-tcp",
-    "ovpn-ws-proxy",
 )
 
 
@@ -89,7 +85,6 @@ def _local_now() -> datetime:
 ALLOWED_RESTART_SERVICES = set(ALLOWED_SERVICES) | {"fail2ban"}
 XRAY_DAEMONS = ("xray-expired", "xray-quota", "xray-limit-ip", "xray-speed")
 SSHWS_SERVICES = ("sshws-dropbear", "sshws-stunnel", "sshws-proxy")
-OPENVPN_SERVICES = ("openvpn-server@autoscript-tcp", "ovpn-ws-proxy")
 SSHWS_DROPBEAR_UNIT = Path("/etc/systemd/system/sshws-dropbear.service")
 SSHWS_STUNNEL_CONF = Path("/etc/stunnel/sshws.conf")
 SSHWS_PROXY_UNIT = Path("/etc/systemd/system/sshws-proxy.service")
@@ -558,55 +553,6 @@ def _edge_runtime_provider_name(default: str = "go") -> str:
 
 def _badvpn_runtime_env_value(key: str, default: str = "") -> str:
     return _read_env_map(BADVPN_RUNTIME_ENV_FILE).get(key, default)
-
-
-def _openvpn_env_value(key: str, default: str = "") -> str:
-    return _read_env_map(OPENVPN_CONFIG_ENV_FILE).get(key, default)
-
-
-def _openvpn_ws_proxy_port() -> int:
-    return _to_int(_openvpn_env_value("OPENVPN_WS_PROXY_PORT", "10016"), 10016)
-
-
-def _openvpn_ws_public_path() -> str:
-    path = str(_openvpn_env_value("OPENVPN_WS_PUBLIC_PATH", "") or "").strip()
-    if not path:
-        return "-"
-    if not path.startswith("/"):
-        path = f"/{path}"
-    return path
-
-
-def _openvpn_ws_alt_path() -> str:
-    path = _openvpn_ws_public_path()
-    if path == "-":
-        return "-"
-    return f"/<bebas>/{path.lstrip('/')}/<bebas>"
-
-
-def _openvpn_public_tcp_ports_label() -> str:
-    ports = _edge_runtime_ports(
-        "EDGE_PUBLIC_TLS_PORTS",
-        "EDGE_PUBLIC_TLS_PORT",
-        "443,2053,2083,2087,2096,8443",
-        "443",
-    ) + _edge_runtime_ports(
-        "EDGE_PUBLIC_HTTP_PORTS",
-        "EDGE_PUBLIC_HTTP_PORT",
-        "80,8080,8880,2052,2082,2086,2095",
-        "80",
-    )
-    merged: list[int] = []
-    seen: set[int] = set()
-    for port in ports:
-        if port in seen:
-            continue
-        seen.add(port)
-        merged.append(port)
-    if not merged:
-        tcp_port = _openvpn_env_value("OPENVPN_PUBLIC_PORT_TCP", _openvpn_env_value("OPENVPN_PORT_TCP", "1194")) or "1194"
-        return str(tcp_port)
-    return _edge_runtime_ports_label(merged)
 
 
 def _sshws_runtime_env_value(key: str, default: str = "") -> str:
@@ -1197,8 +1143,6 @@ def _is_valid_ssh_username(username: str) -> bool:
 def _account_info_label(proto: str) -> str:
     if proto == SSH_PROTOCOL:
         return "SSH ACCOUNT INFO"
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        return "OPENVPN ACCOUNT INFO"
     return "XRAY ACCOUNT INFO"
 
 
@@ -1491,10 +1435,7 @@ def op_quota_detail(proto: str, username: str) -> tuple[str, str]:
                 ]
             )
         else:
-            if proto == OPENVPN_POLICY_PROTOCOL:
-                parts.extend(["", "OPENVPN ACCOUNT INFO: memakai linked profile .ovpn, tidak ada file txt terpisah di /opt/account"])
-            else:
-                parts.extend(["", f"{account_label}: file tidak ditemukan di /opt/account"])
+            parts.extend(["", f"{account_label}: file tidak ditemukan di /opt/account"])
 
         return "Quota & Access Control - Detail", "\n".join(parts)
     return "Quota & Access Control - Detail", f"File quota tidak ditemukan untuk {username} [{proto}]"
@@ -1613,7 +1554,7 @@ def op_qac_user_summary(proto: str, username: str) -> tuple[bool, dict[str, str]
         speed_limit_enabled = bool(status.get("speed_limit_enabled"))
         speed_down = _fmt_number(_to_float(status.get("speed_down_mbit"), 0.0))
         speed_up = _fmt_number(_to_float(status.get("speed_up_mbit"), 0.0))
-        username_display = f"{user_n}@{proto_n}" if proto_n not in {SSH_PROTOCOL, OPENVPN_POLICY_PROTOCOL} else user_n
+        username_display = f"{user_n}@{proto_n}" if proto_n != SSH_PROTOCOL else user_n
         summary = {
             "username": username_display,
             "quota_limit": _fmt_quota_limit_gb(payload),
@@ -1638,19 +1579,6 @@ def op_qac_user_summary(proto: str, username: str) -> tuple[bool, dict[str, str]
                     "active_sessions_total": str(max(0, _to_int(status.get("active_sessions_total"), 0))),
                 }
             )
-        elif proto_n == OPENVPN_POLICY_PROTOCOL:
-            distinct_ips_raw = status.get("distinct_ips") if isinstance(status.get("distinct_ips"), list) else []
-            distinct_ips = [str(item).strip() for item in distinct_ips_raw if str(item).strip()]
-            summary.update(
-                {
-                    "distinct_ip_count": str(max(0, _to_int(status.get("distinct_ip_count"), 0))),
-                    "distinct_ips": ", ".join(distinct_ips) if distinct_ips else "-",
-                    "ip_limit_metric": str(max(0, _to_int(status.get("ip_limit_metric"), 0))),
-                    "account_locked": "ON" if bool(status.get("account_locked")) else "OFF",
-                    "active_sessions_total": str(max(0, _to_int(status.get("active_sessions_total"), 0))),
-                }
-            )
-
         return True, summary
 
     return False, f"File quota tidak ditemukan untuk {user_n} [{proto_n}]"
@@ -3439,102 +3367,6 @@ def op_badvpn_status() -> tuple[str, str]:
         f"Env File      : {BADVPN_RUNTIME_ENV_FILE}",
     ]
     return title, "\n".join(lines)
-
-
-def op_openvpn_status() -> tuple[str, str]:
-    title = "Maintenance - OpenVPN Status"
-    tcp_port = _openvpn_env_value("OPENVPN_PORT_TCP", "1194") or "1194"
-    public_tcp_port = _openvpn_public_tcp_ports_label()
-    ws_proxy_port = _openvpn_ws_proxy_port()
-    ws_public_path = _openvpn_ws_public_path()
-    ws_alt_path = _openvpn_ws_alt_path()
-    lines = ["Services:"]
-    for service in OPENVPN_SERVICES:
-        state = service_state(service)
-        enabled = systemctl_enabled_state(service)
-        load = _systemctl_show_props(service, ["LoadState"]).get("LoadState") or "unknown"
-        if load == "not-found":
-            lines.append(f"- {service}.service: not installed")
-        else:
-            lines.append(f"- {service}.service: {state or '-'} / {enabled or '-'}")
-    lines.extend(
-        [
-            "",
-            "Ports:",
-            f"- backend tcp {tcp_port} : {'LISTENING' if _listener_present(int(tcp_port)) else 'NOT listening'}",
-            f"- public tcp {public_tcp_port} : {'ROUTED via edge-mux' if service_state(_edge_runtime_service_name() or 'edge-mux') == 'active' else 'edge gateway inactive'}",
-            f"- ws proxy {ws_proxy_port} : {'LISTENING' if _listener_present(ws_proxy_port, host='127.0.0.1') else 'NOT listening'}",
-            "",
-            "Runtime:",
-            f"- env file    : {OPENVPN_CONFIG_ENV_FILE}",
-            f"- profile dir : {_openvpn_env_value('OPENVPN_PROFILE_DIR', '/opt/account/openvpn')}",
-            f"- metadata dir: {_openvpn_env_value('OPENVPN_METADATA_DIR', '/var/lib/openvpn-manage/users')}",
-            f"- public host : {_openvpn_env_value('OPENVPN_PUBLIC_HOST', detect_domain() or '-')}",
-            f"- ws path     : {ws_public_path}",
-            f"- ws path alt : {ws_alt_path}",
-            f"- ws port     : {_ws_public_ports_label()}",
-        ]
-    )
-    return title, "\n".join(lines)
-
-
-def op_restart_openvpn() -> tuple[bool, str, str]:
-    title = "Maintenance - Restart OpenVPN"
-    lines: list[str] = []
-    had_failure = False
-    for service in OPENVPN_SERVICES:
-        load = _systemctl_show_props(service, ["LoadState"]).get("LoadState") or "unknown"
-        if load == "not-found":
-            lines.append(f"- {service}: skip (unit tidak ditemukan)")
-            had_failure = True
-            continue
-        ok, state, out = _restart_service_checked(service, timeout=25)
-        if ok:
-            lines.append(f"- {service}: restarted ({state})")
-        else:
-            had_failure = True
-            brief = out.splitlines()[-1].strip() if out else "unknown error"
-            lines.append(f"- {service}: gagal ({state}) - {brief}")
-    if not had_failure:
-        tcp_port = _openvpn_env_value("OPENVPN_PORT_TCP", "1194") or "1194"
-        ws_proxy_port = _openvpn_ws_proxy_port()
-        health_failures: list[str] = []
-        try:
-            tcp_port_int = int(tcp_port)
-        except Exception:
-            health_failures.append(f"backend tcp invalid ({tcp_port})")
-        else:
-            if not _listener_present(tcp_port_int):
-                health_failures.append(f"backend tcp {tcp_port_int} tidak listening")
-        if not _listener_present(ws_proxy_port, host="127.0.0.1"):
-            health_failures.append(f"ws proxy {ws_proxy_port} tidak listening")
-        if health_failures:
-            return False, title, "\n".join(lines + ["", "Health check gagal:", *[f"- {item}" for item in health_failures]])
-        lines.extend(
-            [
-                "",
-                "Health check: OK",
-                f"- backend tcp {tcp_port} listening",
-                f"- ws proxy {ws_proxy_port} listening",
-            ]
-        )
-    return (not had_failure), title, "\n".join(lines)
-
-
-def op_openvpn_logs() -> tuple[str, str]:
-    title = "Maintenance - OpenVPN Logs"
-    chunks: list[str] = []
-    for service in OPENVPN_SERVICES:
-        load = _systemctl_show_props(service, ["LoadState"]).get("LoadState") or "unknown"
-        if load == "not-found":
-            continue
-        unit = f"{service}.service"
-        chunks.append(f"[{unit}]")
-        chunks.append(_journal_tail(unit, lines=20))
-        chunks.append("")
-    if not chunks:
-        return title, "Tidak ada unit OpenVPN yang terpasang."
-    return title, _trim_message("\n".join(chunks).strip())
 
 
 def op_daemon_status() -> tuple[str, str]:

@@ -18,7 +18,7 @@ BACKEND_ROOT_CANDIDATES = (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Delete expired SSH-linked users and linked OpenVPN artifacts")
+    parser = argparse.ArgumentParser(description="Delete expired SSH-linked users and linked runtime artifacts")
     parser.add_argument("--once", action="store_true", help="run one cleanup cycle")
     parser.add_argument("--dry-run", action="store_true", help="only print candidates without deleting")
     return parser.parse_args()

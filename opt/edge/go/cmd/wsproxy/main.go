@@ -19,7 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/superdecrypt-dev/autoscript/opt/edge/go/internal/detect"
 	"github.com/superdecrypt-dev/autoscript/opt/edge/go/internal/wsproxy"
 )
 
@@ -43,9 +42,6 @@ type config struct {
 	listenPort         int
 	backendHost        string
 	backendPort        int
-	ovpnBackendHost    string
-	ovpnBackendPort    int
-	ovpnProbeTimeout   time.Duration
 	path               string
 	handshakeTimeout   time.Duration
 	qacStateRoot       string
@@ -540,7 +536,6 @@ func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl 
 
 	clientIP := wsproxy.ExtractClientIP(headers, conn)
 	probeOnly := cfg.mode == "ssh" && isLoopbackIP(clientIP) && isDiagnosticProbePath(pathOnly, cfg.path)
-	sharedOVPN := cfg.mode == "ssh" && cfg.ovpnBackendPort > 0
 
 	var username string
 	var res *reservation
@@ -581,30 +576,7 @@ func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl 
 
 	backendHost := cfg.backendHost
 	backendPort := cfg.backendPort
-	var firstClientFrame *wsproxy.WSFrame
 	sshRuntime := cfg.mode == "ssh" && !probeOnly
-	if sharedOVPN {
-		if err := wsproxy.SendHandshakeOK(conn, accept); err != nil {
-			if res != nil {
-				registry.finalize(res)
-			}
-			return
-		}
-		frame, useOVPN, err := sniffInitialClientRoute(conn, wsr, wsw, cfg.ovpnProbeTimeout)
-		if err != nil {
-			if res != nil {
-				registry.finalize(res)
-			}
-			_ = wsw.WriteClose()
-			return
-		}
-		firstClientFrame = frame
-		if useOVPN {
-			backendHost = cfg.ovpnBackendHost
-			backendPort = cfg.ovpnBackendPort
-			sshRuntime = false
-		}
-	}
 
 	backendConn, err := net.Dial("tcp", net.JoinHostPort(backendHost, strconv.Itoa(backendPort)))
 	if err != nil {
@@ -644,10 +616,8 @@ func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl 
 		registry.finalize(res)
 	}
 
-	if !sharedOVPN {
-		if err := wsproxy.SendHandshakeOK(conn, accept); err != nil {
-			return
-		}
+	if err := wsproxy.SendHandshakeOK(conn, accept); err != nil {
+		return
 	}
 
 	if cfg.mode == "ssh" && username != "" && sshRuntime {
@@ -679,7 +649,7 @@ func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl 
 
 	go func() {
 		defer func() { done <- struct{}{} }()
-		_ = pumpClientToBackend(wsr, wsw, backendConn, ctx, limiter, firstClientFrame)
+		_ = pumpClientToBackend(wsr, wsw, backendConn, ctx, limiter, nil)
 		_ = backendConn.SetDeadline(time.Now())
 	}()
 	go func() {
@@ -855,13 +825,9 @@ func parseArgs() *config {
 	flag.IntVar(&cfg.listenPort, "listen-port", 10015, "Listen port")
 	flag.StringVar(&cfg.backendHost, "backend-host", "127.0.0.1", "Backend host")
 	flag.IntVar(&cfg.backendPort, "backend-port", 22022, "Backend port")
-	flag.StringVar(&cfg.ovpnBackendHost, "ovpn-backend-host", "127.0.0.1", "OpenVPN backend host")
-	flag.IntVar(&cfg.ovpnBackendPort, "ovpn-backend-port", 0, "Optional OpenVPN backend port for shared WS path")
 	flag.StringVar(&cfg.path, "path", "/", "Expected public path prefix")
 	var hsTimeout float64
 	flag.Float64Var(&hsTimeout, "handshake-timeout", handshakeTimeoutDefault.Seconds(), "Handshake timeout in seconds")
-	var ovpnProbeMS int
-	flag.IntVar(&ovpnProbeMS, "ovpn-probe-timeout-ms", 250, "Timeout in milliseconds to wait for initial OpenVPN payload after WS upgrade")
 	flag.StringVar(&cfg.qacStateRoot, "qac-state-root", "/opt/quota/ssh", "SSH QAC state root")
 	flag.StringVar(&cfg.qacLockFile, "qac-lock-file", "/run/autoscript/locks/sshws-qac.lock", "SSH QAC lock file")
 	flag.StringVar(&cfg.qacEnforcerBin, "qac-enforcer-bin", "/usr/local/bin/sshws-qac-enforcer", "SSH QAC enforcer binary")
@@ -881,44 +847,7 @@ func parseArgs() *config {
 	if cfg.mode != "ssh" {
 		cfg.mode = "tcp"
 	}
-	if ovpnProbeMS < 0 {
-		ovpnProbeMS = 0
-	}
-	cfg.ovpnProbeTimeout = time.Duration(ovpnProbeMS) * time.Millisecond
 	return cfg
-}
-
-func sniffInitialClientRoute(conn net.Conn, reader *bufio.Reader, writer *wsproxy.WSWriter, timeout time.Duration) (*wsproxy.WSFrame, bool, error) {
-	if timeout <= 0 {
-		return nil, false, nil
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(timeout))
-	defer conn.SetReadDeadline(time.Time{})
-	for {
-		frame, err := wsproxy.ReadWSFrame(reader)
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				return nil, false, nil
-			}
-			return nil, false, err
-		}
-		switch frame.Opcode {
-		case wsproxy.OpPing:
-			if err := writer.WritePong(frame.Payload); err != nil {
-				return nil, false, err
-			}
-			continue
-		case wsproxy.OpPong:
-			continue
-		case wsproxy.OpClose:
-			return frame, false, context.Canceled
-		case wsproxy.OpBinary, wsproxy.OpText, wsproxy.OpContinuation:
-			useOVPN := detect.IsOpenVPNClientHello(frame.Payload) || detect.IsTLSClientHello(frame.Payload)
-			return frame, useOVPN, nil
-		default:
-			continue
-		}
-	}
 }
 
 func main() {

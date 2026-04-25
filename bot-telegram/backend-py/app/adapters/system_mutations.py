@@ -32,24 +32,15 @@ ACCOUNT_ROOT = Path("/opt/account")
 QUOTA_ROOT = Path("/opt/quota")
 SPEED_POLICY_ROOT = Path("/opt/speed")
 SSH_PROTOCOL = "ssh"
-OPENVPN_POLICY_PROTOCOL = "openvpn"
 XRAY_PROTOCOLS = ("vless", "vmess", "trojan")
 USER_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL,)
-QAC_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL, OPENVPN_POLICY_PROTOCOL)
+QAC_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL,)
 SSH_ACCOUNT_DIR = ACCOUNT_ROOT / SSH_PROTOCOL
 SSH_QUOTA_DIR = QUOTA_ROOT / SSH_PROTOCOL
-OPENVPN_QUOTA_DIR = QUOTA_ROOT / OPENVPN_POLICY_PROTOCOL
 SSHWS_PROXY_BIN = Path("/usr/local/bin/ws-proxy")
 SSHWS_QAC_ENFORCER_BIN = Path("/usr/local/bin/sshws-qac-enforcer")
 SSHWS_RUNTIME_SESSION_DIR = Path("/run/autoscript/sshws-sessions")
 SSHWS_LOCK_FILE = Path("/run/autoscript/locks/sshws-qac.lock")
-OPENVPN_CONFIG_ENV_FILE = Path("/etc/autoscript/openvpn/config.env")
-OPENVPN_MANAGE_BIN = Path("/usr/local/bin/openvpn-manage")
-OPENVPN_PROFILE_DIR = Path("/opt/account/openvpn")
-OPENVPN_METADATA_DIR = Path("/var/lib/openvpn-manage/users")
-OPENVPN_TCP_SERVICE = "openvpn-server@autoscript-tcp"
-OPENVPN_DOWNLOAD_TTL_SECONDS = 300
-OPENVPN_DOWNLOAD_TOKEN_DIR = Path("/run/autoscript/openvpn-download-tokens")
 ZIVPN_SERVICE = "zivpn"
 ZIVPN_CONFIG_FILE = Path("/etc/zivpn/config.json")
 ZIVPN_SYNC_BIN = Path("/usr/local/bin/zivpn-password-sync")
@@ -353,75 +344,6 @@ def _zivpn_password_read(username: str) -> str:
     return text or "-"
 
 
-def _openvpn_runtime_available() -> bool:
-    return OPENVPN_MANAGE_BIN.exists() and OPENVPN_CONFIG_ENV_FILE.exists()
-
-
-def _openvpn_env_value(key: str, default: str = "") -> str:
-    if not OPENVPN_CONFIG_ENV_FILE.exists():
-        return default
-    try:
-        for line in OPENVPN_CONFIG_ENV_FILE.read_text(encoding="utf-8").splitlines():
-            text = line.strip()
-            if not text or text.startswith("#") or "=" not in text:
-                continue
-            env_key, env_value = text.split("=", 1)
-            if env_key.strip() == key:
-                value = env_value.strip()
-                return value or default
-    except Exception:
-        return default
-    return default
-
-
-def _openvpn_public_host() -> str:
-    domain = _detect_domain()
-    if domain:
-        return domain
-    host = str(_openvpn_env_value("OPENVPN_PUBLIC_HOST", "") or "").strip()
-    if host:
-        return host
-    return _detect_public_ipv4() or "-"
-
-
-def _openvpn_update_env_many(updates: dict[str, str]) -> tuple[bool, str]:
-    lines: list[str] = []
-    if OPENVPN_CONFIG_ENV_FILE.exists():
-        try:
-            lines = OPENVPN_CONFIG_ENV_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except Exception as exc:
-            return False, f"Gagal membaca config env OpenVPN: {exc}"
-
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in lines:
-        line = str(raw or "")
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in line:
-            out.append(line)
-            continue
-        key, _ = line.split("=", 1)
-        key = key.strip()
-        if key in updates:
-            out.append(f"{key}={updates[key]}")
-            seen.add(key)
-            continue
-        out.append(line)
-
-    for key, value in updates.items():
-        if key in seen:
-            continue
-        out.append(f"{key}={value}")
-
-    try:
-        OPENVPN_CONFIG_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _write_text_atomic(OPENVPN_CONFIG_ENV_FILE, "\n".join(out).rstrip("\n") + "\n")
-        os.chmod(OPENVPN_CONFIG_ENV_FILE, 0o600)
-    except Exception as exc:
-        return False, f"Gagal menulis config env OpenVPN: {exc}"
-    return True, "ok"
-
-
 def _managed_ssh_usernames() -> list[str]:
     names: set[str] = set()
     for directory, suffix in ((SSH_ACCOUNT_DIR, f"@{SSH_PROTOCOL}.txt"), (SSH_QUOTA_DIR, f"@{SSH_PROTOCOL}.json")):
@@ -441,243 +363,6 @@ def _managed_ssh_usernames() -> list[str]:
             if username:
                 names.add(username)
     return sorted(names)
-
-
-def _openvpn_sync_public_host_and_profiles(domain: str | None = None) -> tuple[int, int, int, str]:
-    if not _openvpn_runtime_available():
-        return 0, 0, 0, "OpenVPN runtime tidak tersedia."
-
-    domain_eff = str(domain or "").strip() or _detect_domain()
-    if not domain_eff:
-        return 0, 0, 0, "Domain aktif tidak ditemukan."
-
-    ok_env, env_msg = _openvpn_update_env_many({"OPENVPN_PUBLIC_HOST": domain_eff})
-    if not ok_env:
-        return 0, 0, 0, env_msg
-
-    updated = 0
-    failed = 0
-    skipped = 0
-    for username in _managed_ssh_usernames():
-        if not _linux_user_exists(username):
-            skipped += 1
-            continue
-        ok_profile, payload_or_err = _openvpn_manage_json("ensure-user", "--username", username, timeout=300)
-        if ok_profile and isinstance(payload_or_err, dict) and bool(payload_or_err.get("ok", True)):
-            updated += 1
-        else:
-            failed += 1
-    return updated, failed, skipped, "ok"
-
-
-def _openvpn_public_tcp_port() -> str:
-    value = str(_openvpn_env_value("OPENVPN_PUBLIC_PORT_TCP", _openvpn_env_value("OPENVPN_PORT_TCP", "1194")) or "").strip()
-    return value or "1194"
-
-
-def _openvpn_public_tcp_ports_label() -> str:
-    ports = _edge_runtime_ports(
-        "EDGE_PUBLIC_TLS_PORTS",
-        "EDGE_PUBLIC_TLS_PORT",
-        "443,2053,2083,2087,2096,8443",
-        "443",
-    ) + _edge_runtime_ports(
-        "EDGE_PUBLIC_HTTP_PORTS",
-        "EDGE_PUBLIC_HTTP_PORT",
-        "80,8080,8880,2052,2082,2086,2095",
-        "80",
-    )
-    merged: list[int] = []
-    seen: set[int] = set()
-    for port in ports:
-        if port in seen:
-            continue
-        seen.add(port)
-        merged.append(port)
-    if not merged:
-        return _openvpn_public_tcp_port()
-    return _edge_runtime_ports_label(merged)
-
-
-def _openvpn_download_link(username: str) -> str:
-    username_n = str(username or "").strip()
-    if not username_n:
-        return "-"
-    host = str(_openvpn_public_host() or "").strip()
-    if not host or host == "-":
-        return "-"
-    return f"https://{host}/ovpn/{username_n}.ovpn"
-
-
-def _openvpn_ws_public_path() -> str:
-    path = str(_openvpn_env_value("OPENVPN_WS_PUBLIC_PATH", "") or "").strip()
-    if not path:
-        return "-"
-    if not path.startswith("/"):
-        path = f"/{path}"
-    return path
-
-
-def _openvpn_ws_alt_path() -> str:
-    path = _openvpn_ws_public_path()
-    if path == "-":
-        return "-"
-    return _path_alt_placeholder(path)
-
-
-def _openvpn_profile_file(username: str) -> Path:
-    profile_dir = Path(_openvpn_env_value("OPENVPN_PROFILE_DIR", str(OPENVPN_PROFILE_DIR)))
-    return profile_dir / f"{str(username or '').strip()}@openvpn.ovpn"
-
-
-def _openvpn_download_token_file(token: str) -> Path:
-    return OPENVPN_DOWNLOAD_TOKEN_DIR / f"{str(token or '').strip()}.json"
-
-
-def _openvpn_prune_download_tokens(now_ts: int | None = None) -> None:
-    current = int(now_ts or time.time())
-    try:
-        OPENVPN_DOWNLOAD_TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-        OPENVPN_DOWNLOAD_TOKEN_DIR.chmod(0o700)
-    except Exception:
-        return
-    try:
-        for path in OPENVPN_DOWNLOAD_TOKEN_DIR.glob("*.json"):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
-            except Exception:
-                path.unlink(missing_ok=True)
-                continue
-            exp = int(payload.get("exp") or 0)
-            if exp <= current:
-                path.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
-def _openvpn_issue_download_token(username: str, ttl_seconds: int = OPENVPN_DOWNLOAD_TTL_SECONDS) -> str:
-    _openvpn_prune_download_tokens()
-    OPENVPN_DOWNLOAD_TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        OPENVPN_DOWNLOAD_TOKEN_DIR.chmod(0o700)
-    except Exception:
-        pass
-    expires_at = int(time.time()) + max(60, int(ttl_seconds))
-    username_n = str(username or "").strip()
-    for token_path in OPENVPN_DOWNLOAD_TOKEN_DIR.glob("*.json"):
-        try:
-            payload = json.loads(token_path.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
-            token_path.unlink(missing_ok=True)
-            continue
-        if str(payload.get("username") or "").strip() != username_n:
-            continue
-        token_path.unlink(missing_ok=True)
-    for _ in range(8):
-        token = secrets.token_urlsafe(6).rstrip("=")
-        if not token:
-            continue
-        token_path = _openvpn_download_token_file(token)
-        if token_path.exists():
-            continue
-        payload = {
-            "username": username_n,
-            "exp": expires_at,
-        }
-        token_path.write_text(json.dumps(payload, ensure_ascii=True) + "\n", encoding="utf-8")
-        try:
-            token_path.chmod(0o600)
-        except Exception:
-            pass
-        return token
-    return ""
-
-
-def _openvpn_manage_json(*args: str, timeout: int = 60) -> tuple[bool, dict[str, Any] | str]:
-    if not _openvpn_runtime_available():
-        return False, "OpenVPN runtime tidak tersedia"
-    ok, out = _run_cmd(
-        [str(OPENVPN_MANAGE_BIN), "--config", str(OPENVPN_CONFIG_ENV_FILE), *args],
-        timeout=timeout,
-    )
-    if not ok:
-        return False, out
-    try:
-        payload = json.loads(out)
-    except Exception as exc:
-        return False, f"Gagal parse output openvpn-manage: {exc}"
-    if not isinstance(payload, dict):
-        return False, "Format output openvpn-manage tidak valid"
-    return True, payload
-
-
-def _openvpn_ensure_user(username: str) -> tuple[bool, str]:
-    if not _openvpn_runtime_available():
-        return True, "skip"
-    ok, payload = _openvpn_manage_json("ensure-user", "--username", str(username or "").strip(), timeout=300)
-    if not ok:
-        return False, str(payload)
-    if not bool(payload.get("ok")):
-        return False, str(payload)
-    return True, str(payload.get("profile_path") or "")
-
-
-def _openvpn_delete_user(username: str) -> tuple[bool, str]:
-    if not _openvpn_runtime_available():
-        return True, "skip"
-    ok, payload = _openvpn_manage_json("delete-user", "--username", str(username or "").strip(), timeout=300)
-    if not ok:
-        return False, str(payload)
-    if not bool(payload.get("ok", True)):
-        notes = payload.get("notes")
-        if isinstance(notes, list) and notes:
-            return False, " | ".join(str(item) for item in notes if str(item).strip())
-        return False, "delete-user returned not ok"
-    return True, "ok"
-
-
-def _openvpn_cleanup_local_artifacts(username: str) -> tuple[bool, str]:
-    profile = _openvpn_profile_file(username)
-    metadata = Path(_openvpn_env_value("OPENVPN_METADATA_DIR", str(OPENVPN_METADATA_DIR))) / f"{str(username or '').strip()}@openvpn.json"
-    notes: list[str] = []
-    for path in (profile, metadata):
-        try:
-            path.unlink(missing_ok=True)
-        except Exception as exc:
-            notes.append(f"{path}: {exc}")
-            continue
-        if path.exists() or path.is_symlink():
-            notes.append(f"{path}: masih ada")
-    if notes:
-        return False, " | ".join(notes)
-    return True, "ok"
-
-
-def _openvpn_policy_state_load(username: str) -> dict[str, Any]:
-    target = _resolve_existing(_quota_candidates(OPENVPN_POLICY_PROTOCOL, username))
-    if target is None:
-        return {}
-    ok, payload = _read_json(target)
-    if not ok or not isinstance(payload, dict):
-        return {}
-    return payload
-
-
-def _openvpn_load_state(username: str, *, create_missing: bool = False) -> tuple[bool, Path | str, dict[str, Any] | str]:
-    target = _resolve_existing(_quota_candidates(OPENVPN_POLICY_PROTOCOL, username))
-    if target is None and create_missing:
-        ok_ensure, ensure_msg = _openvpn_ensure_user(username)
-        if not ok_ensure:
-            return False, ensure_msg, ""
-        target = _resolve_existing(_quota_candidates(OPENVPN_POLICY_PROTOCOL, username))
-    if target is None:
-        return False, f"File quota tidak ditemukan untuk {username} [{OPENVPN_POLICY_PROTOCOL}]", ""
-    ok, payload = _read_json(target)
-    if not ok:
-        return False, str(payload), ""
-    if not isinstance(payload, dict):
-        return False, f"Format quota tidak valid: {target}", ""
-    return True, target, payload
 
 
 def _edge_runtime_get_env(key: str) -> str:
@@ -2994,36 +2679,6 @@ def _ssh_write_account_info(
         "BadVPN UDPGW",
         "ZIVPN Password",
     ]
-    openvpn_enabled = _openvpn_runtime_available()
-    openvpn_quota_limit = 0
-    openvpn_ip_enabled = False
-    openvpn_ip_limit = 0
-    openvpn_speed_enabled = False
-    openvpn_speed_down = 0.0
-    openvpn_speed_up = 0.0
-    if openvpn_enabled:
-        openvpn_state = _openvpn_policy_state_load(username)
-        openvpn_status = openvpn_state.get("status") if isinstance(openvpn_state.get("status"), dict) else {}
-        openvpn_quota_limit = max(0, _to_int(openvpn_state.get("quota_limit"), 0))
-        openvpn_ip_enabled = bool(openvpn_status.get("ip_limit_enabled"))
-        openvpn_ip_limit = max(0, _to_int(openvpn_status.get("ip_limit"), 0))
-        openvpn_speed_enabled = bool(openvpn_status.get("speed_limit_enabled"))
-        openvpn_speed_down = max(0.0, _to_float(openvpn_status.get("speed_down_mbit"), 0.0))
-        openvpn_speed_up = max(0.0, _to_float(openvpn_status.get("speed_up_mbit"), 0.0))
-    openvpn_portal_url = _account_portal_url(str(openvpn_state.get("portal_token") or "").strip()) if openvpn_enabled else "-"
-    if openvpn_enabled:
-        account_info_labels.extend(
-            [
-                "OpenVPN WS Path",
-                "OpenVPN WS Path Alt",
-                "OpenVPN WS Port",
-                "OpenVPN TCP",
-                "OpenVPN Link",
-                "Portal OpenVPN",
-                "Alt Port SSL/TLS",
-                "Alt Port HTTP",
-            ]
-        )
     running_label_width = max(len(label) for label in account_info_labels)
     running_ssh_ws_path = f"{'SSH WS Path':<{running_label_width}} : {sshws_main}"
     running_ssh_ws_alt = f"{'SSH WS Path Alt':<{running_label_width}} : {sshws_alt_path}"
@@ -3066,23 +2721,6 @@ def _ssh_write_account_info(
                 "",
                 "=== ZIVPN UDP ===",
                 f"{'ZIVPN Password':<{running_label_width}} : {zivpn_password_state}",
-            ]
-        )
-    if openvpn_enabled:
-        openvpn_ws_path = _openvpn_ws_public_path()
-        openvpn_ws_alt_path = _openvpn_ws_alt_path()
-        lines.extend(
-            [
-                "",
-                "=== OPENVPN ===",
-                f"{'OpenVPN WS Path':<{running_label_width}} : {openvpn_ws_path}",
-                f"{'OpenVPN WS Path Alt':<{running_label_width}} : {openvpn_ws_alt_path}",
-                f"{'OpenVPN WS Port':<{running_label_width}} : {_ssh_ws_public_ports_label()}",
-                f"{'OpenVPN TCP':<{running_label_width}} : {_ssh_ws_public_ports_label()}",
-                f"{'OpenVPN Link':<{running_label_width}} : {_openvpn_download_link(username)}",
-                f"{'Portal OpenVPN':<{running_label_width}} : {openvpn_portal_url}",
-                f"{'Alt Port SSL/TLS':<{running_label_width}} : {_edge_runtime_alt_tls_ports_label()}",
-                f"{'Alt Port HTTP':<{running_label_width}} : {_edge_runtime_alt_http_ports_label()}",
             ]
         )
         lines.append("")
@@ -3292,114 +2930,6 @@ def _ssh_apply_state_update(
     return False, [], detail
 
 
-def _openvpn_speed_reconcile_now() -> tuple[bool, str]:
-    if _service_exists("openvpn-speed-reconcile"):
-        ok, out = _run_cmd(["systemctl", "start", "openvpn-speed-reconcile.service"], timeout=20)
-        return ok, out
-    if _service_exists("openvpn-speed"):
-        ok, out = _run_cmd(["systemctl", "start", "openvpn-speed-reconcile.service"], timeout=20)
-        if ok:
-            return True, out
-        ok_once, out_once = _run_cmd(["/usr/local/bin/openvpn-speed", "once", "--config", "/etc/autoscript/openvpn/speed.json"], timeout=30)
-        return ok_once, out_once
-    return True, "skip"
-
-
-def _openvpn_apply_state_update(
-    username: str,
-    path: Path,
-    previous_payload: dict[str, Any],
-    next_payload: dict[str, Any],
-) -> tuple[bool, list[str], str]:
-    try:
-        _save_quota(path, next_payload)
-    except Exception as exc:
-        return False, [], f"Gagal menyimpan state OpenVPN: {exc}"
-
-    ok_enforce, enforce_msg = _ssh_run_enforcer(username=username, require_available=True)
-    if not ok_enforce:
-        rollback_notes: list[str] = []
-        try:
-            _save_quota(path, previous_payload)
-        except Exception as exc:
-            rollback_notes.append(f"rollback-state: {exc}")
-        else:
-            ok_rollback_enforce, rollback_enforce_msg = _ssh_run_enforcer(
-                username=username,
-                require_available=True,
-            )
-            if not ok_rollback_enforce:
-                rollback_notes.append(f"rollback-enforcer: {rollback_enforce_msg}")
-            ok_rollback_refresh, rollback_refresh_msg = _ssh_refresh_account_info(username)
-            if not ok_rollback_refresh:
-                rollback_notes.append(f"rollback-account-info: {rollback_refresh_msg}")
-        detail = f"enforcer: {enforce_msg}"
-        if rollback_notes:
-            detail += " | " + " | ".join(rollback_notes)
-        else:
-            detail += " | state di-rollback"
-        return False, [], detail
-
-    warnings: list[str] = []
-    ok_speed, speed_msg = _openvpn_speed_reconcile_now()
-    if not ok_speed:
-        warnings.append(f"speed-reconcile: {speed_msg}")
-
-    ok_refresh, refresh_msg = _ssh_refresh_account_info(username)
-    if ok_refresh:
-        return True, warnings, ""
-
-    rollback_notes: list[str] = []
-    try:
-        _save_quota(path, previous_payload)
-    except Exception as exc:
-        rollback_notes.append(f"rollback-state: {exc}")
-    else:
-        ok_rollback_enforce, rollback_enforce_msg = _ssh_run_enforcer(
-            username=username,
-            require_available=True,
-        )
-        if not ok_rollback_enforce:
-            rollback_notes.append(f"rollback-enforcer: {rollback_enforce_msg}")
-        ok_rollback_speed, rollback_speed_msg = _openvpn_speed_reconcile_now()
-        if not ok_rollback_speed:
-            rollback_notes.append(f"rollback-speed: {rollback_speed_msg}")
-        ok_rollback_refresh, rollback_refresh_msg = _ssh_refresh_account_info(username)
-        if not ok_rollback_refresh:
-            rollback_notes.append(f"rollback-account-info: {rollback_refresh_msg}")
-
-    detail = f"account-info: {refresh_msg}"
-    if rollback_notes:
-        detail += " | " + " | ".join(rollback_notes)
-    else:
-        detail += " | state di-rollback"
-    return False, warnings, detail
-
-
-def _openvpn_quota_update(
-    title: str,
-    username: str,
-    success_msg: str,
-    mutate_fn,
-    *,
-    create_missing: bool = True,
-) -> tuple[bool, str, str]:
-    ok_q, q_path_or_msg, q_data_or_msg = _openvpn_load_state(username, create_missing=create_missing)
-    if not ok_q:
-        return False, title, str(q_path_or_msg)
-    q_path = q_path_or_msg
-    q_data = q_data_or_msg
-    assert isinstance(q_path, Path)
-    assert isinstance(q_data, dict)
-    previous_payload = copy.deepcopy(q_data)
-    mutate_fn(q_data)
-    ok_apply, warnings, apply_error = _openvpn_apply_state_update(username, q_path, previous_payload, q_data)
-    if not ok_apply:
-        return False, title, f"{success_msg} gagal diterapkan untuk {username}@{OPENVPN_POLICY_PROTOCOL}: {apply_error}"
-    msg = f"{success_msg} untuk {username}@{OPENVPN_POLICY_PROTOCOL}"
-    if warnings:
-        msg += "\n- Warning: " + " | ".join(warnings)
-    return True, title, msg
 
 
 def _ssh_restore_linux_password(username: str, password: str) -> tuple[bool, str]:
@@ -3457,7 +2987,6 @@ def _ssh_add_user_rollback(
     cleanup_zivpn: bool,
 ) -> tuple[bool, str, str]:
     title = "User Management - Add User"
-    ok_openvpn_cleanup, openvpn_cleanup_msg = _openvpn_cleanup_local_artifacts(username)
     if cleanup_zivpn:
         ok_cleanup, cleanup_msg = _zivpn_remove_user_password(username)
         if not ok_cleanup:
@@ -3502,8 +3031,6 @@ def _ssh_add_user_rollback(
             continue
         if path.exists() or path.is_symlink():
             error_prefix += f"\n- Cleanup artefak gagal: {path} masih ada"
-    if not ok_openvpn_cleanup:
-        error_prefix += f"\n- Cleanup OpenVPN gagal: {openvpn_cleanup_msg}"
     return False, title, error_prefix
 
 
@@ -6056,16 +5583,6 @@ def op_user_add(
                 error_prefix=f"Gagal sinkronisasi ZIVPN untuk '{username}': {zivpn_msg}",
                 cleanup_zivpn=True,
             )
-        ok_openvpn, openvpn_msg = _openvpn_ensure_user(username)
-        if not ok_openvpn:
-            return _ssh_add_user_rollback(
-                username,
-                quota_path,
-                account_path,
-                raw_password=raw_password,
-                error_prefix=f"Gagal membuat linked profile OpenVPN untuk '{username}': {openvpn_msg}",
-                cleanup_zivpn=True,
-            )
         ok_account, account_msg = _ssh_refresh_account_info(username, password_override=raw_password)
         if not ok_account:
             return _ssh_add_user_rollback(
@@ -6198,34 +5715,6 @@ def op_user_account_file_download(proto: str, username: str) -> tuple[bool, dict
     }
 
 
-def op_openvpn_profile_file_download(username: str) -> tuple[bool, dict[str, str] | str]:
-    if not _openvpn_runtime_available():
-        return False, "OpenVPN runtime tidak tersedia."
-    if not _is_valid_ssh_username(username):
-        return False, "Username SSH tidak valid."
-
-    ok_profile, payload_or_err = _openvpn_manage_json("profile-download", "--username", username, timeout=300)
-    if not ok_profile:
-        return False, str(payload_or_err)
-    if not isinstance(payload_or_err, dict):
-        return False, "Format profile-download OpenVPN tidak valid."
-
-    profile_path = Path(str(payload_or_err.get("profile_path") or "").strip())
-    if not profile_path.exists():
-        return False, f"Profile OpenVPN tidak ditemukan: {profile_path}"
-
-    try:
-        raw = profile_path.read_bytes()
-    except Exception as exc:
-        return False, f"Gagal membaca profile OpenVPN: {exc}"
-
-    return True, {
-        "filename": f"{username}@openvpn.ovpn",
-        "content_base64": base64.b64encode(raw).decode("ascii"),
-        "content_type": "application/x-openvpn-profile",
-    }
-
-
 @_user_data_mutation_locked
 def op_user_delete(proto: str, username: str) -> tuple[bool, str, str]:
     if proto not in USER_PROTOCOLS:
@@ -6273,10 +5762,7 @@ def op_user_delete(proto: str, username: str) -> tuple[bool, str, str]:
                 "User Management - Delete User",
                 f"Gagal menghapus user Linux '{username}': {del_msg}.{suffix}",
             )
-        ok_openvpn, openvpn_msg = _openvpn_delete_user(username)
         cleanup_notes = _delete_account_artifacts_checked(proto, username)
-        if not ok_openvpn:
-            cleanup_notes.append(f"cleanup OpenVPN gagal: {openvpn_msg}")
         if cleanup_notes:
             return (
                 False,
@@ -6657,17 +6143,6 @@ def op_quota_set_limit(proto: str, username: str, quota_gb: float) -> tuple[bool
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Set Limit", msg
 
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        return _openvpn_quota_update(
-            "Quota - Set Limit",
-            username,
-            f"Quota limit diubah ke {_fmt_number(quota_gb)} GB",
-            lambda q_data: (
-                q_data.__setitem__("quota_limit", int(round(quota_gb * (1024**3)))),
-                q_data.__setitem__("status", q_data.get("status") if isinstance(q_data.get("status"), dict) else {}),
-            ),
-        )
-
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
         return False, "Quota - Set Limit", str(q_path_or_msg)
@@ -6722,20 +6197,6 @@ def op_quota_reset_used(proto: str, username: str) -> tuple[bool, str, str]:
         if warnings:
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Reset Used", msg
-
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            q_data["quota_used"] = 0
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["quota_exhausted"] = False
-            status["lock_reason"] = ""
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Reset Used",
-            username,
-            "Quota used di-reset",
-            _mutate_openvpn,
-        )
 
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
@@ -6794,18 +6255,6 @@ def op_quota_manual_block(proto: str, username: str, enabled: bool) -> tuple[boo
         if warnings:
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Manual Block", msg
-
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["manual_block"] = bool(enabled)
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Manual Block",
-            username,
-            f"Manual block {'ON' if enabled else 'OFF'}",
-            _mutate_openvpn,
-        )
 
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
@@ -6866,21 +6315,6 @@ def op_quota_ip_limit_enable(proto: str, username: str, enabled: bool) -> tuple[
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - IP Limit", msg
 
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["ip_limit_enabled"] = bool(enabled)
-            if not enabled:
-                status["ip_limit_locked"] = False
-                status["lock_reason"] = ""
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - IP Limit",
-            username,
-            f"IP limit {'ON' if enabled else 'OFF'}",
-            _mutate_openvpn,
-        )
-
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
         return False, "Quota - IP Limit", str(q_path_or_msg)
@@ -6940,18 +6374,6 @@ def op_quota_set_ip_limit(proto: str, username: str, limit: int) -> tuple[bool, 
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Set IP Limit", msg
 
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["ip_limit"] = int(limit)
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Set IP Limit",
-            username,
-            f"IP limit diubah ke {limit}",
-            _mutate_openvpn,
-        )
-
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
         return False, "Quota - Set IP Limit", str(q_path_or_msg)
@@ -7008,20 +6430,6 @@ def op_quota_unlock_ip_lock(proto: str, username: str) -> tuple[bool, str, str]:
         if warnings:
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Unlock IP Lock", msg
-
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["ip_limit_locked"] = False
-            if str(status.get("lock_reason") or "").strip().lower() == "ip_limit":
-                status["lock_reason"] = ""
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Unlock IP Lock",
-            username,
-            "IP lock di-unlock",
-            _mutate_openvpn,
-        )
 
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
@@ -7088,18 +6496,6 @@ def op_quota_set_speed_down(proto: str, username: str, speed_down: float) -> tup
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Speed Download", msg
 
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["speed_down_mbit"] = float(speed_down)
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Speed Download",
-            username,
-            f"Speed download diubah ke {_fmt_number(speed_down)} Mbps",
-            _mutate_openvpn,
-        )
-
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
         return False, "Quota - Speed Download", str(q_path_or_msg)
@@ -7156,18 +6552,6 @@ def op_quota_set_speed_up(proto: str, username: str, speed_up: float) -> tuple[b
         if warnings:
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Speed Upload", msg
-
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["speed_up_mbit"] = float(speed_up)
-            q_data["status"] = status
-        return _openvpn_quota_update(
-            "Quota - Speed Upload",
-            username,
-            f"Speed upload diubah ke {_fmt_number(speed_up)} Mbps",
-            _mutate_openvpn,
-        )
 
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
@@ -7228,26 +6612,6 @@ def op_quota_speed_limit(proto: str, username: str, enabled: bool) -> tuple[bool
         if warnings:
             msg += "\n- Warning: " + " | ".join(warnings)
         return True, "Quota - Speed Limit", msg
-
-    if proto == OPENVPN_POLICY_PROTOCOL:
-        def _mutate_openvpn(q_data: dict[str, Any]) -> None:
-            status = q_data.get("status") if isinstance(q_data.get("status"), dict) else {}
-            status["speed_limit_enabled"] = bool(enabled)
-            if enabled:
-                down = _to_float(status.get("speed_down_mbit"), 0.0)
-                up = _to_float(status.get("speed_up_mbit"), 0.0)
-                if down <= 0 or up <= 0:
-                    raise ValueError("Set speed download/upload > 0 dulu sebelum ON.")
-            q_data["status"] = status
-        try:
-            return _openvpn_quota_update(
-                "Quota - Speed Limit",
-                username,
-                f"Speed limit {'ON' if enabled else 'OFF'}",
-                _mutate_openvpn,
-            )
-        except ValueError as exc:
-            return False, "Quota - Speed Limit", str(exc)
 
     ok_q, q_path_or_msg, q_data_or_msg = _load_quota(proto, username)
     if not ok_q:
@@ -8103,7 +7467,6 @@ def op_domain_setup_custom(domain: str) -> tuple[bool, str, str]:
     if ok_ip:
         ip_override = str(ip_or_err)
     updated, failed, skipped = _refresh_all_account_info(domain=domain_n, ip=ip_override)
-    ovpn_updated, ovpn_failed, ovpn_skipped, ovpn_msg = _openvpn_sync_public_host_and_profiles(domain_n)
     lines = [
         f"Domain aktif sekarang: {domain_n}",
         "- Certificate mode : standalone",
@@ -8112,17 +7475,9 @@ def op_domain_setup_custom(domain: str) -> tuple[bool, str, str]:
     if failed > 0:
         lines.append(
             f"- Warning: {failed} ACCOUNT INFO gagal direfresh. Domain aktif tetap dipertahankan; jalankan refresh eksplisit bila diperlukan."
-        )
+    )
     if skipped > 0:
         lines.append(f"- Catatan: {skipped} entri account-info yatim dilewati otomatis.")
-    if ovpn_failed > 0:
-        lines.append(
-            f"- Warning: {ovpn_failed} profil OpenVPN gagal direfresh. Jalankan refresh eksplisit bila diperlukan."
-        )
-    elif ovpn_msg != "ok":
-        lines.append(f"- Catatan OpenVPN: {ovpn_msg}")
-    if ovpn_updated > 0 or ovpn_skipped > 0:
-        lines.append(f"- OpenVPN profiles: updated={ovpn_updated}, skipped={ovpn_skipped}")
     return True, title, "\n".join(lines)
 
 
@@ -8251,7 +7606,6 @@ def op_domain_setup_cloudflare(
         return False, title, f"{error_msg}\nRollback domain gagal:\n{msg_rb}"
 
     updated, failed, skipped = _refresh_all_account_info(domain=domain_final, ip=vps_ipv4)
-    ovpn_updated, ovpn_failed, ovpn_skipped, ovpn_msg = _openvpn_sync_public_host_and_profiles(domain_final)
     lines = [
         f"Domain aktif sekarang: {domain_final}",
         f"- Root domain      : {root_domain}",
@@ -8264,16 +7618,10 @@ def op_domain_setup_cloudflare(
     if failed > 0:
         lines.append(
             f"- Warning: {failed} ACCOUNT INFO gagal direfresh. Domain/DNS/certificate aktif tetap dipertahankan; jalankan refresh eksplisit bila diperlukan."
-        )
+    )
     if skipped > 0:
         lines.append(f"- Catatan: {skipped} entri account-info yatim dilewati otomatis.")
     lines.append(f"- ACCOUNT INFO updated: {updated}")
-    if ovpn_failed > 0:
-        lines.append(f"- Warning OpenVPN : {ovpn_failed} profil gagal direfresh.")
-    elif ovpn_msg != "ok":
-        lines.append(f"- Catatan OpenVPN : {ovpn_msg}")
-    if ovpn_updated > 0 or ovpn_skipped > 0:
-        lines.append(f"- OpenVPN profiles: updated={ovpn_updated}, skipped={ovpn_skipped}")
     return True, title, "\n".join(lines)
 
 
@@ -8295,7 +7643,6 @@ def op_domain_set(domain: str, issue_cert: bool = False) -> tuple[bool, str, str
         return False, title, ng_msg
 
     updated, failed, skipped = _refresh_all_account_info(domain=domain_n)
-    ovpn_updated, ovpn_failed, ovpn_skipped, ovpn_msg = _openvpn_sync_public_host_and_profiles(domain_n)
     if failed > 0:
         return True, title, (
             f"Domain berhasil diubah ke: {domain_n}\n"
@@ -8305,32 +7652,18 @@ def op_domain_set(domain: str, issue_cert: bool = False) -> tuple[bool, str, str
     msg = f"Domain berhasil diubah ke: {domain_n}\n- ACCOUNT INFO updated: {updated}"
     if skipped > 0:
         msg += f"\n- Catatan: {skipped} entri account-info yatim dilewati otomatis."
-    if ovpn_failed > 0:
-        msg += f"\n- Warning OpenVPN: {ovpn_failed} profil gagal direfresh."
-    elif ovpn_msg != 'ok':
-        msg += f"\n- Catatan OpenVPN: {ovpn_msg}"
-    if ovpn_updated > 0 or ovpn_skipped > 0:
-        msg += f"\n- OpenVPN profiles: updated={ovpn_updated}, skipped={ovpn_skipped}"
     return True, title, msg
 
 
 @_user_data_mutation_locked
 def op_domain_refresh_accounts() -> tuple[bool, str, str]:
     updated, failed, skipped = _refresh_all_account_info()
-    ovpn_updated, ovpn_failed, ovpn_skipped, ovpn_msg = _openvpn_sync_public_host_and_profiles()
     title = "Domain Control - Refresh Account Info"
     msg = f"Selesai: updated={updated}, failed={failed}"
     if skipped > 0:
         msg += f", skipped={skipped}"
-    if ovpn_updated > 0 or ovpn_failed > 0 or ovpn_skipped > 0:
-        msg += f"\nOpenVPN profiles: updated={ovpn_updated}, failed={ovpn_failed}, skipped={ovpn_skipped}"
-    elif ovpn_msg != "ok":
-        msg += f"\nOpenVPN: {ovpn_msg}"
     if failed > 0:
         msg += "\nSebagian ACCOUNT INFO gagal direfresh."
-        return False, title, msg
-    if ovpn_failed > 0:
-        msg += "\nSebagian profil OpenVPN gagal direfresh."
         return False, title, msg
     if skipped > 0:
         msg += "\nEntri account-info yatim dilewati otomatis."
