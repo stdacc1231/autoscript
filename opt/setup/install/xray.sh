@@ -851,6 +851,7 @@ write_xray_modular_configs() {
   need_python3
 
   python3 - <<'PY' "${XRAY_CONFIG}" "${XRAY_CONFDIR}"
+import copy
 import json
 import os
 import sys
