@@ -1838,7 +1838,7 @@ ssh_collect_candidate_users() {
     fi
     seen_users["${name}"]=1
     printf '%s\n' "${name}"
-  done < <(find "${ZIVPN_PASSWORDS_DIR}" -maxdepth 1 -type f -name '*.pass' -printf '%f\n' 2>/dev/null | sort -u)
+  done < <(find "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" -maxdepth 1 -type f -name '*.pass' -printf '%f\n' 2>/dev/null | sort -u)
 
   if [[ "${include_linux}" == "true" ]]; then
     while IFS= read -r name; do
