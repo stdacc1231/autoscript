@@ -894,7 +894,7 @@ func backendIngressPrefix(cfg runtime.Config, target string, left net.Conn, payl
 
 func shouldSendProxyHeader(cfg runtime.Config, target string) bool {
 	switch target {
-	case cfg.HTTPBackendAddr(), cfg.VLESSRawBackendAddr(), cfg.TrojanRawBackendAddr():
+	case cfg.HTTPBackendAddr(), cfg.VLESSRawBackendAddr(), cfg.VMessRawBackendAddr(), cfg.TrojanRawBackendAddr():
 		return true
 	default:
 		return false
