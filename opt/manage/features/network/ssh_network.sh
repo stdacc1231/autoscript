@@ -305,11 +305,11 @@ ssh_network_xray_redir_port_v6_get() {
 }
 
 ssh_network_xray_redir_inbound_tag_v4_get() {
-  printf 'ssh-network-warp-redir-v4\n'
+  printf 'xray-warp-redir-v4\n'
 }
 
 ssh_network_xray_redir_inbound_tag_v6_get() {
-  printf 'ssh-network-warp-redir-v6\n'
+  printf 'xray-warp-redir-v6\n'
 }
 
 ssh_network_xray_redir_chain_v4_get() {
