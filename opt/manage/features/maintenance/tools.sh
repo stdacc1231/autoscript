@@ -441,6 +441,8 @@ autoscript_full_hard_uninstall_apply() {
     "/etc/bot-telegram"
     "/var/lib/bot-telegram"
     "/var/log/bot-telegram"
+    "${ACCOUNT_ROOT:-/opt/account}/ssh"
+    "${QUOTA_ROOT:-/opt/quota}/ssh"
     "${ACCOUNT_ROOT:-/opt/account}"
     "${QUOTA_ROOT:-/opt/quota}"
     "${SPEED_POLICY_ROOT:-/opt/speed}"
@@ -486,6 +488,15 @@ autoscript_full_hard_uninstall_apply() {
   for path in "${remove_files[@]}"; do
     [[ -n "${path}" ]] || continue
     autoscript_uninstall_rm_f "${path}" || failures=$((failures + 1))
+  done
+
+  # Pastikan subtree SSH tidak tersisa walaupun root account/quota sempat
+  # diregenerasi ulang oleh proses lain di sela uninstall.
+  for path in "${ACCOUNT_ROOT:-/opt/account}/ssh" "${QUOTA_ROOT:-/opt/quota}/ssh"; do
+    [[ -n "${path}" ]] || continue
+    if [[ -e "${path}" ]]; then
+      autoscript_uninstall_rm_rf "${path}" "${path}" || failures=$((failures + 1))
+    fi
   done
 
   if [[ -n "${domain}" ]]; then
