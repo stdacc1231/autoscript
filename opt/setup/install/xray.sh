@@ -575,6 +575,40 @@ wait_for_xray_service_stable() {
   return 0
 }
 
+ensure_xray_service_unit() {
+  local xray_user="${1:-xray}"
+  local frag=""
+
+  frag="$(systemctl show -p FragmentPath --value xray 2>/dev/null || true)"
+  if [[ -n "${frag:-}" && -f "${frag}" ]]; then
+    return 0
+  fi
+
+  ok "Pasang fallback unit xray.service..."
+  cat >/etc/systemd/system/xray.service <<EOF
+[Unit]
+Description=Xray Service
+Documentation=https://github.com/xtls
+After=network.target nss-lookup.target
+
+[Service]
+User=${xray_user}
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+RuntimeDirectory=xray
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
 setup_xray_xhttp3_udphop_runtime() {
   local iface helper_src
   iface="$(ip route get 1.1.1.1 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
@@ -607,6 +641,7 @@ configure_xray_service_confdir() {
   xray_bin="$(command -v xray || true)"
   [[ -n "${xray_bin:-}" ]] || xray_bin="/usr/local/bin/xray"
   ensure_xray_service_user
+  ensure_xray_service_unit "xray"
 
   # Hilangkan warning systemd "Special user nobody configured" dari unit utama.
   local frag

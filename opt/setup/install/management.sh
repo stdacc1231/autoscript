@@ -46,7 +46,46 @@ def parse_iso8601(value):
 
 def load_json(path):
   with open(path, "r", encoding="utf-8") as f:
-    return json.load(f)
+    raw = f.read()
+  out = []
+  in_str = False
+  quote = ""
+  escape = False
+  i = 0
+  n = len(raw)
+  while i < n:
+    ch = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and raw[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return json.loads("".join(out))
 
 def save_json_atomic(path, data):
   # BUG-10 fix: use mkstemp (unique name) instead of fixed "{path}.tmp"
@@ -592,7 +631,46 @@ def now_iso():
 
 def load_json(path):
   with open(path, "r", encoding="utf-8") as f:
-    return json.load(f)
+    raw = f.read()
+  out = []
+  in_str = False
+  quote = ""
+  escape = False
+  i = 0
+  n = len(raw)
+  while i < n:
+    ch = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and raw[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return json.loads("".join(out))
 
 def with_status_lock(path):
   lock_path = f"{path}.lock"
@@ -1061,7 +1139,46 @@ def now_iso():
 
 def load_json(path):
   with open(path, "r", encoding="utf-8") as f:
-    return json.load(f)
+    raw = f.read()
+  out = []
+  in_str = False
+  quote = ""
+  escape = False
+  i = 0
+  n = len(raw)
+  while i < n:
+    ch = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and raw[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return json.loads("".join(out))
 
 def save_json_atomic(path, data):
   # BUG-10 fix: use mkstemp (unique name) instead of fixed "{path}.tmp"
@@ -1307,7 +1424,46 @@ def now_iso():
 
 def load_json(path):
   with open(path, "r", encoding="utf-8") as f:
-    return json.load(f)
+    raw = f.read()
+  out = []
+  in_str = False
+  quote = ""
+  escape = False
+  i = 0
+  n = len(raw)
+  while i < n:
+    ch = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and raw[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return json.loads("".join(out))
 
 def save_json_atomic(path, data):
   # BUG-10 fix: use mkstemp (unique name) instead of fixed "{path}.tmp"

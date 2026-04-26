@@ -225,10 +225,21 @@ PY
 
 service_enable_restart_checked() {
   local svc="$1"
-  systemctl enable "$svc" --now >/dev/null 2>&1 || return 1
-  systemctl restart "$svc" >/dev/null 2>&1 || return 1
-  systemctl is-active --quiet "$svc" || return 1
-  return 0
+  local try
+
+  systemctl reset-failed "$svc" >/dev/null 2>&1 || true
+  systemctl enable "$svc" >/dev/null 2>&1 || return 1
+
+  for try in 1 2 3 4 5; do
+    systemctl start "$svc" >/dev/null 2>&1 || true
+    sleep 1
+    if systemctl is-active --quiet "$svc"; then
+      return 0
+    fi
+    systemctl reset-failed "$svc" >/dev/null 2>&1 || true
+  done
+
+  return 1
 }
 
 need_root() {
