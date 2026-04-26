@@ -1,22 +1,54 @@
 # Autoscript
 
-> Installer, runtime, dan panel operasional harian untuk stack `Xray-core`, `SSH WS`, `ZIVPN`, `Edge Gateway`, `WARP`, dan bot `Telegram` di VPS Linux.
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Linux-0f172a?style=for-the-badge&logo=linux&logoColor=white" alt="Linux">
+  <img src="https://img.shields.io/badge/Core-Xray-111827?style=for-the-badge&logo=radar&logoColor=white" alt="Xray">
+  <img src="https://img.shields.io/badge/Edge-Go%20edge--mux-0b5fff?style=for-the-badge&logo=go&logoColor=white" alt="Go edge-mux">
+  <img src="https://img.shields.io/badge/Remote-Telegram-229ED9?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram">
+  <img src="https://img.shields.io/badge/WARP-Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare WARP">
+</p>
 
-Autoscript dirancang untuk operator yang ingin satu repo untuk:
-- bootstrap server dari nol
-- mengelola user `Xray` dan `SSH` dari CLI modular
-- menautkan `ZIVPN` langsung ke lifecycle akun `SSH`
-- menjalankan ingress publik berbasis `Go edge-mux`
-- mengoperasikan `WARP`, `BadVPN`, `Domain Guard`, dan bot `Telegram`
+> Platform instalasi dan operasi harian untuk VPS Linux yang menjalankan `Xray`, `SSH/WebSocket`, `ZIVPN`, `BadVPN`, `WARP`, `Account Portal`, dan bot `Telegram` dalam satu stack terpadu.
+
+`autoscript` ditujukan untuk operator yang membutuhkan satu repositori untuk membangun, mengoperasikan, dan memelihara layanan akses berbasis VPS secara konsisten. Fokus utamanya adalah menggabungkan proses bootstrap host, pengelolaan akun, kontrol jaringan, observability, backup/restore, dan tooling operasional ke dalam satu alur kerja yang praktis.
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Manage-CLI-1f2937?style=flat-square&logo=gnubash&logoColor=white" alt="Manage CLI">
+  <img src="https://img.shields.io/badge/Portal-Account-2563eb?style=flat-square&logo=vercel&logoColor=white" alt="Account Portal">
+  <img src="https://img.shields.io/badge/Support-Backup%20%26%20Restore-0f766e?style=flat-square&logo=icloud&logoColor=white" alt="Backup and Restore">
+  <img src="https://img.shields.io/badge/Transport-VMess%20TCP%2BTLS-7c3aed?style=flat-square&logo=buffer&logoColor=white" alt="VMess TCP TLS">
+  <img src="https://img.shields.io/badge/Transport-VLESS%20XHTTP3-0891b2?style=flat-square&logo=quic&logoColor=white" alt="VLESS XHTTP3">
+</p>
+
+## Overview
+
+Dengan `autoscript`, operator dapat:
+
+- melakukan bootstrap VPS dari nol melalui `run.sh`
+- menjalankan ingress publik berbasis `edge-mux`
+- mengelola akun `Xray` dan `SSH` dari CLI modular `manage`
+- menghubungkan lifecycle akun `SSH` dengan runtime `ZIVPN`
+- mengoperasikan `WARP`, `BadVPN`, `Domain Guard`, `Account Portal`, backup/restore, dan bot `Telegram`
+
+## Why Autoscript
+
+- **Satu alur instalasi** melalui `run.sh`
+- **Satu panel operasi harian** melalui `manage`
+- **Layanan inti lengkap** untuk `Xray`, `SSH`, `ZIVPN`, dan `WARP`
+- **Portal akun read-only** per user
+- **Bot Telegram** untuk operasi jarak jauh
+- **Backup/restore lokal dan cloud**
+- **Edge gateway tunggal** untuk multiplex trafik publik
 
 ## Status Biaya
 
-`autoscript` dan source repo ini gratis untuk digunakan.
+Source code `autoscript` tersedia gratis untuk digunakan.
 
-Aktivasi lisensi IP VPS tetap menjadi bagian dari flow produk, tetapi dokumentasi ini menegaskan bahwa software/repo `autoscript` sendiri tidak dijual berbayar.
+Aktivasi lisensi IP VPS tetap menjadi bagian dari flow produk. Namun, repositori dan source code `autoscript` sendiri bukan software berbayar.
 
-## Sebelum Install
-Sebelum menjalankan installer, aktifkan dulu lisensi IP VPS di website:
+## Persiapan Sebelum Install
+
+Sebelum menjalankan installer, aktifkan lisensi IP VPS terlebih dahulu:
 
 - Website lisensi: `https://autoscript.license.dpdns.org`
 - Langkah singkat:
@@ -24,16 +56,18 @@ Sebelum menjalankan installer, aktifkan dulu lisensi IP VPS di website:
   2. input public IPv4 VPS
   3. selesaikan verifikasi bila diminta
   4. pastikan IP sudah aktif
-  5. baru jalankan `run.sh`
+  5. jalankan `run.sh`
 
-Kalau lisensi belum aktif, installer akan berhenti di preflight license guard.
+Jika lisensi belum aktif, installer akan berhenti pada tahap preflight `License Guard`.
 
 ## Quick Install
+
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/superdecrypt-dev/autoscript/main/run.sh)
 ```
 
 ## Arsitektur Singkat
+
 ```text
 Internet / Cloudflare
         |
@@ -45,116 +79,116 @@ Internet / Cloudflare
         +--> nginx            127.0.0.1:18080
         +--> SSH Dropbear     127.0.0.1:22022
         +--> SSH Stunnel      127.0.0.1:22443
-        +--> Websocket Proxy (Go)  127.0.0.1:10015
+        +--> WS Proxy (Go)    127.0.0.1:10015
         +--> Xray-core        via inbound runtime
 ```
 
-## Layanan Utama
+## Kapabilitas Utama
 
-| Komponen | Peran | Status Runtime |
-| --- | --- | --- |
-| `edge-mux` | ingress publik untuk `Xray` dan `SSH` | frontend utama |
-| `xray` | core proxy untuk `VLESS`, `VMess`, `Trojan` | backend utama |
-| `nginx` | HTTP backend internal dan TLS/web support | internal |
-| `sshws-dropbear` | backend SSH direct/dropbear | internal |
-| `sshws-stunnel` | backend SSH SSL/TLS | internal |
-| `sshws-proxy` | Websocket Proxy (Go) untuk backend SSH WS | internal |
-| `badvpn-udpgw` | UDPGW lokal untuk payload/game tertentu | internal |
-| `wireproxy` / `warp-svc` | runtime `WARP Free/Plus` atau `Zero Trust` | sesuai mode aktif |
-| `xray-domain-guard` | guardrail domain, TLS, dan health check | maintenance |
-| `bot-telegram-backend` | API internal bot Telegram | opsional |
-| `bot-telegram-gateway` | gateway Telegram menu-first | opsional |
+### Layanan inti
 
-## Layanan dan Protokol
-- `VLESS`, `VMess`, `Trojan`
-- transport `XHTTP`, `WS`, `HTTPUpgrade`, `gRPC`, `TCP+TLS`
-- `SSH WS`, `SSH SSL/TLS`, `SSH Direct`
+- `Xray` untuk `VLESS`, `VMess`, dan `Trojan`
+- `SSH Direct`, `SSH SSL/TLS`, dan `SSH WS`
 - `ZIVPN`
-- `WARP Free/Plus`, `WARP Zero Trust`, `BadVPN UDPGW`
+- `BadVPN UDPGW`
+- `WARP Free/Plus` dan `WARP Zero Trust`
 
-## Port Publik
+### Transport Xray
 
-### Front Door Edge Gateway
+- `VLESS WS`
+- `VLESS HUP`
+- `VLESS XHTTP`
+- `VLESS XHTTP3`
+- `VLESS gRPC`
+- `VLESS TCP+TLS`
+- `VMess WS`
+- `VMess HUP`
+- `VMess XHTTP`
+- `VMess gRPC`
+- `VMess TCP+TLS`
+- `Trojan WS`
+- `Trojan HUP`
+- `Trojan XHTTP`
+- `Trojan gRPC`
+- `Trojan TCP+TLS`
+
+### Tooling operator
+
+- `manage` CLI modular
+- `Account Portal`
+- `Bot Telegram`
+- `Backup/Restore`
+- `License Guard`
+- `Domain Guard`
+- `Traffic`, `QAC`, `Speed`, dan `Adblocker`
+- `Tools > Uninstall` untuk teardown total stack autoscript
+
+## Komponen Runtime
+
+| Komponen | Peran | Status |
+| --- | --- | --- |
+| `edge-mux` | ingress publik utama | frontend |
+| `xray` | core proxy utama | backend |
+| `nginx` | HTTP backend internal dan web support | internal |
+| `sshws-dropbear` | backend SSH direct | internal |
+| `sshws-stunnel` | backend SSH TLS | internal |
+| `sshws-proxy` | backend SSH WebSocket | internal |
+| `badvpn-udpgw` | UDPGW lokal | internal |
+| `wireproxy` / `warp-svc` | runtime WARP | sesuai mode aktif |
+| `zivpn` | backend UDP ZIVPN | internal |
+| `account-portal` | portal akun read-only | opsional |
+| `bot-telegram-backend` | API internal bot | opsional |
+| `bot-telegram-gateway` | gateway Telegram | opsional |
+| `xray-domain-guard` | guard domain dan TLS | maintenance |
+| `xray-session` | pelacak sesi aktif Xray | maintenance |
+
+## Eksposur Jaringan
+
+### Port publik edge gateway
 
 | Kategori | Port | Keterangan |
 | --- | --- | --- |
 | `HTTP primary` | `80` | ingress utama |
-| `HTTP alternate` | `8080, 8880, 2052, 2082, 2086, 2095` | port alternatif kompatibel Cloudflare |
+| `HTTP alternate` | `8080, 8880, 2052, 2082, 2086, 2095` | port alternatif |
 | `HTTPS primary` | `443` | ingress utama TLS |
-| `HTTPS alternate` | `2053, 2083, 2087, 2096, 8443` | port alternatif kompatibel Cloudflare |
+| `HTTPS alternate` | `2053, 2083, 2087, 2096, 8443` | port alternatif |
 
-### Service Exposure
+### Ekspos layanan
 
-| Layanan | Jalur / Port User-Facing |
+| Layanan | Port user-facing |
 | --- | --- |
-| `SSH WS` | `443, 80` + alt port Cloudflare |
-| `SSH SSL/TLS` | `443, 80` + alt port Cloudflare |
-| `SSH Direct` | `443, 80` + alt port Cloudflare |
-| `VLESS XHTTP` | `443, 80` + alt port Cloudflare |
-| `VLESS WS` | `443, 80` + alt port Cloudflare |
-| `VLESS HUP` | `443, 80` + alt port Cloudflare |
-| `VLESS gRPC` | `443, 80` + alt port Cloudflare |
-| `VLESS TCP+TLS` | `443, 80` + alt port Cloudflare |
-| `VMess XHTTP` | `443, 80` + alt port Cloudflare |
-| `VMess WS` | `443, 80` + alt port Cloudflare |
-| `VMess HUP` | `443, 80` + alt port Cloudflare |
-| `VMess gRPC` | `443, 80` + alt port Cloudflare |
-| `VMess TCP+TLS` | `443, 80` + alt port Cloudflare |
-| `Trojan XHTTP` | `443, 80` + alt port Cloudflare |
-| `Trojan WS` | `443, 80` + alt port Cloudflare |
-| `Trojan HUP` | `443, 80` + alt port Cloudflare |
-| `Trojan gRPC` | `443, 80` + alt port Cloudflare |
-| `Trojan TCP+TLS` | `443, 80` + alt port Cloudflare |
-| `ZIVPN` | `443, 80` + alt port Cloudflare |
+| `SSH WS` | `443, 80` + alt port |
+| `SSH SSL/TLS` | `443, 80` + alt port |
+| `SSH Direct` | `443, 80` + alt port |
+| `VLESS` semua transport | `443, 80` + alt port |
+| `VMess` semua transport | `443, 80` + alt port |
+| `Trojan` semua transport | `443, 80` + alt port |
 
-## Path Runtime
+## Path Publik Stabil
 
-Gunakan hanya path publik di bawah ini untuk client.
-Jangan gunakan path internal acak backend `Xray` atau proxy lokal karena nilainya bisa berubah setiap install atau re-render config.
+Gunakan hanya path publik di bawah ini untuk client. Hindari memakai path internal acak backend lokal.
 
-### Path Publik Stabil
-
-| Transport | Path utama | Varian alt yang didukung | Catatan |
+| Transport | Path utama | Varian alt | Catatan |
 | --- | --- | --- | --- |
-| `SSH WS` | `/<token-hex-10>` atau `/diagnostic-probe` | `/<bebas>/<token-hex-10>/<bebas>` dan `/<bebas>/diagnostic-probe/<bebas>` | token SSH WS adalah 10 karakter heksadesimal |
-| `VLESS WS` | `/vless-ws` | `/<bebas>/vless-ws` atau `/<bebas>/vless-ws/<bebas>` | path publik stabil |
-| `VLESS HUP` | `/vless-hup` | `/<bebas>/vless-hup` atau `/<bebas>/vless-hup/<bebas>` | path publik stabil |
-| `VLESS XHTTP` | `/vless-xhttp` | `/<bebas>/vless-xhttp` atau `/<bebas>/vless-xhttp/<bebas>` | path publik stabil |
-| `VLESS gRPC` | `/vless-grpc` | `/<bebas>/vless-grpc` atau `/<bebas>/vless-grpc/<bebas>` | request publik tetap path, service name internal dirahasiakan |
-| `VMess WS` | `/vmess-ws` | `/<bebas>/vmess-ws` atau `/<bebas>/vmess-ws/<bebas>` | path publik stabil |
-| `VMess HUP` | `/vmess-hup` | `/<bebas>/vmess-hup` atau `/<bebas>/vmess-hup/<bebas>` | path publik stabil |
-| `VMess XHTTP` | `/vmess-xhttp` | `/<bebas>/vmess-xhttp` atau `/<bebas>/vmess-xhttp/<bebas>` | path publik stabil |
-| `VMess gRPC` | `/vmess-grpc` | `/<bebas>/vmess-grpc` atau `/<bebas>/vmess-grpc/<bebas>` | request publik tetap path, service name internal dirahasiakan |
-| `Trojan WS` | `/trojan-ws` | `/<bebas>/trojan-ws` atau `/<bebas>/trojan-ws/<bebas>` | path publik stabil |
-| `Trojan HUP` | `/trojan-hup` | `/<bebas>/trojan-hup` atau `/<bebas>/trojan-hup/<bebas>` | path publik stabil |
-| `Trojan XHTTP` | `/trojan-xhttp` | `/<bebas>/trojan-xhttp` atau `/<bebas>/trojan-xhttp/<bebas>` | path publik stabil |
-| `Trojan gRPC` | `/trojan-grpc` | `/<bebas>/trojan-grpc` atau `/<bebas>/trojan-grpc/<bebas>` | request publik tetap path, service name internal dirahasiakan |
+| `SSH WS` | `/<token-hex-10>` | `/<bebas>/<token-hex-10>/<bebas>` | token SSH WS 10 digit heksadesimal |
+| `VLESS WS` | `/vless-ws` | `/<bebas>/vless-ws/<bebas>` | path publik stabil |
+| `VLESS HUP` | `/vless-hup` | `/<bebas>/vless-hup/<bebas>` | path publik stabil |
+| `VLESS XHTTP` | `/vless-xhttp` | `/<bebas>/vless-xhttp/<bebas>` | path publik stabil |
+| `VLESS XHTTP3` | `xray.json per akun` | mengikuti profile UDP/QUIC | profile client dirender otomatis |
+| `VLESS gRPC` | `/vless-grpc` | `/<bebas>/vless-grpc/<bebas>` | service name internal disembunyikan |
+| `VMess WS` | `/vmess-ws` | `/<bebas>/vmess-ws/<bebas>` | path publik stabil |
+| `VMess HUP` | `/vmess-hup` | `/<bebas>/vmess-hup/<bebas>` | path publik stabil |
+| `VMess XHTTP` | `/vmess-xhttp` | `/<bebas>/vmess-xhttp/<bebas>` | path publik stabil |
+| `VMess gRPC` | `/vmess-grpc` | `/<bebas>/vmess-grpc/<bebas>` | service name internal disembunyikan |
+| `Trojan WS` | `/trojan-ws` | `/<bebas>/trojan-ws/<bebas>` | path publik stabil |
+| `Trojan HUP` | `/trojan-hup` | `/<bebas>/trojan-hup/<bebas>` | path publik stabil |
+| `Trojan XHTTP` | `/trojan-xhttp` | `/<bebas>/trojan-xhttp/<bebas>` | path publik stabil |
+| `Trojan gRPC` | `/trojan-grpc` | `/<bebas>/trojan-grpc/<bebas>` | service name internal disembunyikan |
 
-### Path Internal
+Catatan:
 
-Contoh path internal yang tidak perlu dipakai operator:
-- `Xray WS/HUP` memakai path acak seperti `/h5faaachbphar0`
-- `Xray gRPC` memakai service name acak seperti `24j1m934rp8m`
-- `SSH WS` backend proxy tetap listen internal di `127.0.0.1:10015`
-- `ZIVPN` backend runtime tetap mengikuti konfigurasi service aktif di host.
-
-Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
-
-## Portal Info Akun
-- Setiap akun `Xray` dan `SSH` sekarang bisa punya link portal read-only sendiri.
-- Portal ini berdiri sebagai service mandiri di host, tidak menumpang backend bot Telegram.
-- Format URL:
-  - `https://<domain-vps>/account/<token>`
-- Portal menampilkan:
-  - status akun
-  - sisa masa aktif
-  - quota limit / quota terpakai / quota tersisa
-  - IP login aktif yang masih terdeteksi runtime
-- API JSON pendukung:
-  - `GET /api/account/<token>/summary`
-- Link portal ikut ditulis ke:
-  - `XRAY ACCOUNT INFO`
-  - `SSH ACCOUNT INFO`
+- `TCP+TLS` tidak menggunakan path publik
+- `VLESS XHTTP3` menggunakan profile `xray.json` yang dirender per akun
 
 ## Port Internal
 
@@ -163,22 +197,33 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 | `nginx` | `127.0.0.1:18080` | backend web internal |
 | `sshws-dropbear` | `127.0.0.1:22022` | backend SSH direct |
 | `sshws-stunnel` | `127.0.0.1:22443` | backend SSH TLS |
-| `sshws-proxy` | `127.0.0.1:10015` | Websocket Proxy (Go) untuk SSH WS |
-| `account-portal` | `127.0.0.1:7082` | website read-only info akun |
-| `bot-telegram-backend` | `127.0.0.1:7081` | API internal bot Telegram |
-| `edge-mux metrics` | `127.0.0.1:9910` | metrics dan status edge |
-| `WARP local proxy` | `127.0.0.1:40000` | runtime `Zero Trust` / proxy lokal |
+| `sshws-proxy` | `127.0.0.1:10015` | backend SSH WS |
+| `account-portal` | `127.0.0.1:7082` | website info akun |
+| `bot-telegram-backend` | `127.0.0.1:7081` | API internal bot |
+| `edge-mux metrics` | `127.0.0.1:9910` | metrics edge |
+| `WARP local proxy` | `127.0.0.1:40000` | runtime Zero Trust |
 | `BadVPN UDPGW` | `127.0.0.1:7300, 7400, 7500, 7600, 7700, 7800, 7900` | UDPGW lokal |
 
-## Service Highlights
-- `manage.sh` adalah panel CLI modular untuk operasi harian.
-- `run.sh` dan `setup.sh` menangani bootstrap host, install runtime, dan sinkronisasi service.
-- `account-portal/` menyediakan website mandiri untuk status akun per token.
-- `bot-telegram/` menyediakan backend + gateway menu-first untuk operasi dari Telegram.
-- `opt/edge/go/` memuat source `edge-mux` dan `wsproxy`, sedangkan artefak distribusi ada di `opt/edge/dist/` dan `opt/wsproxy/dist/`.
-- `manage_bundle.zip` dan `bot_telegram.zip` dipakai sebagai release artifact untuk installer.
+## Account Portal
 
-## Menu Utama
+Setiap akun `Xray` dan `SSH` dapat memiliki link portal read-only sendiri.
+
+- format URL:
+  - `https://<domain-vps>/account/<token>`
+- portal menampilkan:
+  - status akun
+  - masa aktif
+  - quota limit, used, dan remaining
+  - sesi aktif yang masih terdeteksi runtime
+- endpoint JSON:
+  - `GET /api/account/<token>/summary`
+
+Untuk `VLESS XHTTP3`, portal juga dapat menyediakan file profile `xray.json` bila akun memiliki artefak tersebut.
+
+## Manage CLI
+
+### Menu utama
+
 ```text
 1) Xray Users
 2) SSH Users
@@ -196,36 +241,61 @@ Path internal itu hanya dipakai untuk wiring `nginx -> proxy/Xray` di host.
 0) Keluar
 ```
 
-### Tools
+### Menu `Tools`
+
 ```text
 13) Tools
 1) Telegram Bot
 2) WARP Tier
 3) License Guard
 4) Backup/Restore
+5) Uninstall
 0) Back
 ```
 
+### Menu `Uninstall`
+
+```text
+13) Tools > Uninstall
+1) Full Hard Uninstall
+0) Back
+```
+
+`Full Hard Uninstall` ditujukan untuk membersihkan stack autoscript secara keras, termasuk service, unit, akun managed, cert/domain lokal, secret bot, config backup, dan runtime state. Package sistem tetap dibiarkan terpasang.
+
+## WARP
+
 ### WARP Xray
-- `Xray Network -> WARP` mendukung override per-user dan per-inbound dengan 3 aksi:
-  - `direct`
-  - `warp`
-  - `reset ke global`
 
-## Backup/Restore
-- `Backup/Restore` sekarang tersedia di:
-  - CLI `manage` lewat `13) Tools -> 4) Backup/Restore`
-  - bot Telegram lewat `Main Menu -> Backup/Restore`
-- Provider cloud yang didukung:
-  - `Google Drive`
-  - `Cloudflare R2`
-  - `Telegram` dipakai untuk backup lokal + restore upload dari chat
-- Nama file backup manual memakai format:
-  - `backup-YYYY-MM-DD-HH:MM.tar.gz`
-- `safety backup` internal tetap dibuat otomatis sebelum restore penuh dan disimpan terpisah.
+`Xray Network -> WARP` mendukung override per-user dan per-inbound:
 
-### Menu Cloud
-Baik di CLI maupun bot Telegram, menu cloud sekarang mengikuti susunan ini:
+- `direct`
+- `warp`
+- `reset ke global`
+
+### WARP SSH
+
+- `SSH Network` mendukung WARP host/global dan mode per-user
+- backend dapat mengikuti `wireproxy` atau `Zero Trust` sesuai state aktif
+
+## Backup and Restore
+
+`Backup/Restore` tersedia di:
+
+- CLI `manage` lewat `13) Tools -> 4) Backup/Restore`
+- bot Telegram lewat menu backup
+
+Provider yang didukung:
+
+- `Google Drive`
+- `Cloudflare R2`
+- `Telegram` untuk upload backup lokal dan restore file dari chat
+
+Format nama backup manual:
+
+- `backup-YYYY-MM-DD-HH:MM.tar.gz`
+
+### Menu cloud
 
 ```text
 - Setup
@@ -238,52 +308,73 @@ Baik di CLI maupun bot Telegram, menu cloud sekarang mengikuti susunan ini:
 - Delete Cloud Backup
 ```
 
-### Setup Google Drive
-- `Google Drive` mendukung flow OAuth headless.
-- Setup bisa dilakukan dari:
-  - `Termux` langsung memakai `rclone authorize`
-  - `VPS + SSH tunnel`
-- Bot Telegram menyediakan:
-  - `Tutorial Setup`
-  - `Paste JSON Auth Google`
-  - `Use Existing Remote`
-- CLI menyediakan flow yang sama di menu `Google Drive -> Setup`.
+### Perilaku restore
 
-### Setup Cloudflare R2
-- `Cloudflare R2` mendukung setup dari:
-  - bot Telegram lewat `Quick Setup R2`
-  - CLI lewat wizard `Quick Setup R2`
-  - `Manual rclone config`
-- Data minimum yang dibutuhkan:
-  - `Account ID`
-  - `Bucket Name`
-  - `Access Key ID`
-  - `Secret Access Key`
+- restore cloud penuh bekerja sebagai `snapshot replace`
+- domain aktif, config Xray, quota, speed, cert, dan state runtime dalam scope restore akan ikut dipulihkan
+- sebelum restore penuh, sistem membuat `safety backup`
+- bila validasi pasca-restore gagal, sistem mencoba rollback otomatis
 
-### Perilaku Restore
-- `Restore Latest Cloud Backup` dan `Restore Select Backup` adalah restore penuh.
-- Restore penuh bekerja sebagai `snapshot replace` untuk scope restore yang diizinkan.
-- Artinya file akun/quota/speed/config dalam scope restore akan mengikuti isi backup, bukan merge.
-- Domain aktif, config Xray, quota, speed, cert, dan state runtime yang masuk whitelist restore akan ikut dipulihkan.
-- Sebelum restore penuh, sistem membuat `safety backup` dulu dan mencoba rollback otomatis jika validasi pasca-restore gagal.
+Panduan detail tersedia di:
 
-### Perilaku Select/Delete
-- `Restore Select Backup` dan `Delete Cloud Backup` sekarang memakai `NO` dari `List Cloud Backups`, bukan nama file manual.
-- Di CLI, daftar backup cloud ditampilkan dulu sebelum input `NO`.
-- Di bot Telegram, submenu select/delete menyediakan:
-  - `List Cloud Backups`
-  - `Input Backup NO`
+- `docs/BACKUP_RESTORE_CLOUD.md`
 
-### Catatan Operasional
-- Restore bersifat live dan akan menimpa runtime aktif.
-- Gunakan restore hanya untuk rollback atau recovery, bukan untuk trial acak.
-- `Google Drive` lebih cocok untuk backup pribadi/operator.
-- `Cloudflare R2` lebih cocok untuk backup server/object storage native.
-- Panduan lebih detail ada di `docs/BACKUP_RESTORE_CLOUD.md`.
+## Bot Telegram
 
-## Bot
-### Telegram
-- Entry point: `/menu`, `/cleanup`, `/start`
-- UX sekarang menu-first dengan kategori `Status`, `Accounts`, `QAC`, `Domain`, `Network`, `Ops`
-- Action mutasi dikendalikan lewat ACL admin Telegram, bukan lagi flag dangerous terpisah
-- Detail: `bot-telegram/README.md`
+Entry point utama:
+
+- `/menu`
+- `/cleanup`
+- `/start`
+
+Karakter bot:
+
+- menu-first
+- aman untuk operasi jarak jauh yang konservatif
+- memakai ACL admin Telegram untuk aksi mutasi
+
+Detail lanjutan tersedia di:
+
+- `bot-telegram/README.md`
+
+## Struktur Repo Penting
+
+- `run.sh` dan `setup.sh`
+  - bootstrap dan install host
+- `manage.sh`
+  - CLI operasional utama
+- `opt/manage/`
+  - modul CLI
+- `opt/setup/`
+  - installer, template, helper runtime
+- `opt/edge/go/`
+  - source `edge-mux`
+- `opt/edge/dist/`
+  - binary prebuilt `edge-mux`
+- `account-portal/`
+  - portal akun
+- `bot-telegram/`
+  - backend dan gateway Telegram
+- `manage_bundle.zip`
+  - artifact bundle installer/manage
+- `bot_telegram.zip`
+  - artifact bundle bot
+
+## Catatan Operasional
+
+- gunakan path publik stabil untuk client
+- hindari memakai path internal acak backend
+- restore bersifat live dan dapat menimpa runtime aktif
+- `Tools > Uninstall` bersifat destruktif dan ditujukan untuk teardown total stack
+
+## Summary
+
+Jika Anda membutuhkan satu repositori yang dapat:
+
+- menginstal VPS dari nol
+- menyediakan layanan `Xray`, `SSH`, `ZIVPN`, dan `WARP`
+- memberikan panel CLI yang kuat untuk operasi harian
+- menyediakan portal akun dan bot Telegram
+- tetap nyaman dipakai untuk maintenance, troubleshooting, dan recovery
+
+maka `autoscript` memang dibangun untuk kebutuhan tersebut.
