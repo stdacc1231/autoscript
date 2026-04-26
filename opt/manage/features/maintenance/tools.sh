@@ -507,7 +507,9 @@ autoscript_full_hard_uninstall_apply() {
   fi
   hr
   pause
-  return 0
+  # Keluar langsung dari sesi manage yang sedang berjalan agar bootstrap/menu
+  # tidak sempat membuat ulang root account/quota kosong setelah uninstall.
+  exit 0
 }
 
 autoscript_full_hard_uninstall_menu() {
