@@ -181,8 +181,49 @@ import json
 import sys
 from pathlib import Path
 
+def strip_json_comments(text):
+    out = []
+    i = 0
+    n = len(text)
+    in_str = False
+    quote = ""
+    escape = False
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_str = False
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            in_str = True
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "/":
+            i += 2
+            while i < n and text[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
 path, tag_name, field_name = sys.argv[1:]
-cfg = json.loads(Path(path).read_text())
+cfg = json.loads(strip_json_comments(Path(path).read_text(encoding="utf-8")))
 for inbound in cfg.get("inbounds", []):
     if inbound.get("tag") != tag_name:
         continue
