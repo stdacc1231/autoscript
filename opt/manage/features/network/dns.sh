@@ -461,12 +461,14 @@ servers = dns.get("servers")
 if not isinstance(servers, list):
   servers = []
 
+sep = "\x1f"
+
 for idx, entry in enumerate(servers):
   if isinstance(entry, str):
-    print(f"{idx}\tstring\t-\t{entry}\t0\t-\t-\t-\t-")
+    print(sep.join([str(idx), "string", "-", entry, "0", "-", "-", "-", "-"]))
     continue
   if not isinstance(entry, dict):
-    print(f"{idx}\tunknown\t-\t-\t0\t-\t-\t-\t-")
+    print(sep.join([str(idx), "unknown", "-", "-", "0", "-", "-", "-", "-"]))
     continue
   tag = entry.get("tag")
   tag = tag.strip() if isinstance(tag, str) else ""
@@ -480,7 +482,17 @@ for idx, entry in enumerate(servers):
   finalquery = "on" if bool(entry.get("finalQuery")) else "off"
   qstrategy = entry.get("queryStrategy")
   qstrategy = qstrategy.strip() if isinstance(qstrategy, str) else ""
-  print(f"{idx}\tdict\t{tag}\t{addr}\t{len(clean_domains)}\t{skipfallback}\t{finalquery}\t{qstrategy}\t{','.join(clean_domains)}")
+  print(sep.join([
+    str(idx),
+    "dict",
+    tag,
+    addr,
+    str(len(clean_domains)),
+    skipfallback,
+    finalquery,
+    qstrategy,
+    ",".join(clean_domains),
+  ]))
 PY
 }
 
@@ -1261,6 +1273,7 @@ PY
 dns_addons_servers_summary_render() {
   local src_file="${1:-${XRAY_DNS_CONF}}"
   local lines=()
+  local field_sep=$'\x1f'
   mapfile -t lines < <(xray_dns_server_objects_get "${src_file}")
   local line idx typ tag addr dcount skip final qstr dlist
   echo "Resolver Objects"
@@ -1271,7 +1284,7 @@ dns_addons_servers_summary_render() {
   fi
   for line in "${lines[@]}"; do
     [[ -n "${line}" ]] || continue
-    IFS=$'\t' read -r idx typ tag addr dcount skip final qstr dlist <<<"${line}"
+    IFS="${field_sep}" read -r idx typ tag addr dcount skip final qstr dlist <<<"${line}"
     printf "  [%s] %s\n" "${idx}" "${addr:-${typ}}"
     printf "       %-14s : %s\n" "Tag" "${tag:--}"
     printf "       %-14s : %s\n" "Domains" "${dcount:-0}"
@@ -1317,10 +1330,10 @@ dns_addons_server_object_menu() {
         fi
         local idx
         read -r -p "Index resolver object (lihat summary, atau kembali): " idx
-        if is_back_choice "${idx}"; then
-          continue
-        fi
         idx="$(echo "${idx}" | tr -d '[:space:]')"
+        case "${idx}" in
+          kembali|k|back|b) continue ;;
+        esac
         if ! [[ "${idx}" =~ ^[0-9]+$ ]]; then
           warn "Index resolver tidak valid"
           pause
@@ -1422,15 +1435,16 @@ dns_addons_server_object_editor_menu() {
   fi
   dns_candidate="${_candidate_ref}"
   while true; do
+    local field_sep=$'\x1f'
     local status_blob parse_state line typ tag addr dcount skip final qstr dlist
     status_blob="$(xray_dns_status_get "${dns_candidate:-${XRAY_DNS_CONF}}")"
     parse_state="$(printf '%s\n' "${status_blob}" | awk -F'=' '/^parse_state=/{print $2; exit}' 2>/dev/null || true)"
-    line="$(xray_dns_server_objects_get "${dns_candidate:-${XRAY_DNS_CONF}}" | awk -F'\t' -v n="${idx}" '$1==n {print; exit}' 2>/dev/null || true)"
+    line="$(xray_dns_server_objects_get "${dns_candidate:-${XRAY_DNS_CONF}}" | awk -F "${field_sep}" -v n="${idx}" '$1==n {print; exit}' 2>/dev/null || true)"
     if [[ -z "${line}" ]]; then
       warn "Resolver index ${idx} tidak ditemukan"
       return 1
     fi
-    IFS=$'\t' read -r _ typ tag addr dcount skip final qstr dlist <<<"${line}"
+    IFS="${field_sep}" read -r _ typ tag addr dcount skip final qstr dlist <<<"${line}"
     title
     echo "$(xray_network_menu_title "DNS Resolver Object #${idx}")"
     hr
