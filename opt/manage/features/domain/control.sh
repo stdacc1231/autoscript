@@ -501,6 +501,17 @@ domain_control_current_nginx_domain_get() {
     | tr -d ';' || true
 }
 
+domain_root_guess() {
+  local domain="${1:-}"
+  domain="$(normalize_domain_token "${domain}")"
+  [[ -n "${domain}" ]] || return 1
+  if [[ "${domain}" == *.*.* ]]; then
+    printf '%s\n' "${domain#*.}"
+  else
+    printf '%s\n' "${domain}"
+  fi
+}
+
 domain_control_cf_sync_pending_dir_prepare() {
   mkdir -p "${DOMAIN_CONTROL_CF_SYNC_PENDING_DIR}" 2>/dev/null || return 1
   chmod 700 "${DOMAIN_CONTROL_CF_SYNC_PENDING_DIR}" 2>/dev/null || true
@@ -847,22 +858,32 @@ install_acme_and_issue_cert() {
 	      conflict_services+=("${svc}")
 	    done < <(domain_control_port80_conflict_services_list)
 	    if (( ${#conflict_services[@]} > 0 )); then
-	      warn "Terdeteksi konflik port 80. Set Domain standalone sekarang fail-closed dan tidak lagi menghentikan service publik otomatis."
-	      warn "Service aktif di port 80: $(IFS=', '; echo "${conflict_services[*]}")"
-	      warn "Bebaskan port 80 secara manual lalu jalankan Set Domain lagi."
-	      return 1
+	      warn "Terdeteksi konflik port 80. Layanan yang memakai port 80 akan dihentikan sementara lalu dipulihkan setelah selesai."
+	      log "Service aktif di port 80: $(IFS=', '; echo "${conflict_services[*]}")"
+	      if ! stop_conflicting_services; then
+	        warn "Gagal menghentikan semua layanan konflik port 80."
+	        return 1
+	      fi
 	    fi
 	    log "Issue sertifikat untuk $DOMAIN via acme.sh (standalone port 80)..."
-	    /root/.acme.sh/acme.sh --issue --force --standalone -d "$DOMAIN" --httpport 80 \
-	      || die "Gagal issue sertifikat (pastikan port 80 terbuka & DNS domain mengarah ke VPS)."
+	    if ! /root/.acme.sh/acme.sh --issue --force --standalone -d "$DOMAIN" --httpport 80; then
+	      warn "Gagal issue sertifikat (pastikan port 80 terbuka & DNS domain mengarah ke VPS)."
+	      if ! domain_control_restore_stopped_services; then
+	        warn "Sebagian service yang dihentikan sementara gagal dipulihkan setelah issue sertifikat gagal."
+	      fi
+	      return 1
+	    fi
 
-    /root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-      --key-file "${install_privkey}" \
-      --fullchain-file "${install_fullchain}" \
-	      --reloadcmd "/bin/true" >/dev/null || {
-	        warn "Gagal install-cert standalone ke ${CERT_DIR}."
-	        return 1
-	      }
+	    if ! /root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+	      --key-file "${install_privkey}" \
+	      --fullchain-file "${install_fullchain}" \
+	      --reloadcmd "/bin/true" >/dev/null; then
+	      warn "Gagal install-cert standalone ke ${CERT_DIR}."
+	      if ! domain_control_restore_stopped_services; then
+	        warn "Sebagian service yang dihentikan sementara gagal dipulihkan setelah install-cert gagal."
+	      fi
+	      return 1
+	    fi
 	  fi
 
   chmod 600 "${install_privkey}" "${install_fullchain}" >/dev/null 2>&1 || true
@@ -1771,8 +1792,8 @@ domain_control_guard_check() {
     2) warn "Domain & Cert Guard: masalah critical terdeteksi." ;;
     *) warn "Domain & Cert Guard selesai dengan status ${rc}." ;;
   esac
-  echo "Config path: ${XRAY_DOMAIN_GUARD_CONFIG_FILE}"
-  if [[ -f "${XRAY_DOMAIN_GUARD_LOG_FILE}" ]]; then
+  echo "Config path: ${XRAY_DOMAIN_GUARD_CONFIG_FILE:-${DOMAIN_GUARD_CONFIG_FILE}}"
+  if [[ -n "${XRAY_DOMAIN_GUARD_LOG_FILE:-}" && -f "${XRAY_DOMAIN_GUARD_LOG_FILE}" ]]; then
     echo "Log path   : ${XRAY_DOMAIN_GUARD_LOG_FILE}"
   fi
   rm -f "${spin_log}" >/dev/null 2>&1 || true
@@ -1819,8 +1840,8 @@ domain_control_guard_renew_if_needed() {
     2) warn "Preflight guard: masalah critical terdeteksi." ;;
     *) warn "Preflight guard selesai dengan status ${check_rc}." ;;
   esac
-  echo "Config path: ${XRAY_DOMAIN_GUARD_CONFIG_FILE}"
-  if [[ -f "${XRAY_DOMAIN_GUARD_LOG_FILE}" ]]; then
+  echo "Config path: ${XRAY_DOMAIN_GUARD_CONFIG_FILE:-${DOMAIN_GUARD_CONFIG_FILE}}"
+  if [[ -n "${XRAY_DOMAIN_GUARD_LOG_FILE:-}" && -f "${XRAY_DOMAIN_GUARD_LOG_FILE}" ]]; then
     echo "Log path   : ${XRAY_DOMAIN_GUARD_LOG_FILE}"
   fi
   if [[ -n "${status_log}" && -s "${status_log}" ]]; then
