@@ -5,7 +5,9 @@ dipindah ke folder ini secara bertahap.
 
 Yang sudah dipindah:
 - `sshws-qac-enforcer.py`
+- `xray-session.py`
 - `xray-speed.py`
+- `xray-warp-sync.py`
 - `xray-domain-guard`
 
 Komponen Go yang sekarang juga aktif:

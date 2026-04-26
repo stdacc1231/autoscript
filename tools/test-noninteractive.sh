@@ -73,6 +73,11 @@ mapfile -t PYTHON_FILES < <(
 log "Python compile"
 python_compile_files "${PYTHON_FILES[@]}"
 
+if [[ -f "tools/test-xray-session.sh" ]]; then
+  log "Script test: xray-session"
+  bash tools/test-xray-session.sh
+fi
+
 log "Python gate: Telegram bot"
 bash bot-telegram/scripts/gate-all.sh
 

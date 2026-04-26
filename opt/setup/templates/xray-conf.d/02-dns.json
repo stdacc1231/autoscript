@@ -1,0 +1,67 @@
+// Xray DNS fragment template.
+// Advanced DNS control: object-based resolvers, per-domain priorities, system hosts, DoH + FakeDNS only.
+{
+  "dns": {
+    "queryStrategy": "UseIP",
+    "enableParallelQuery": true,
+    "useSystemHosts": true,
+    "disableFallback": false,
+    "disableFallbackIfMatch": false,
+    "hosts": {
+      "localhost": "127.0.0.1",
+      "ip6-localhost": "::1",
+      "__DOMAIN__": "__VPS_IPV4__"
+    },
+    "servers": [
+      "fakedns",
+      {
+        "address": "https+local://1.1.1.1/dns-query",
+        "domains": [
+          "full:__DOMAIN__"
+        ],
+        "skipFallback": true,
+        "finalQuery": true,
+        "queryStrategy": "UseIPv4",
+        "tag": "portal-doh"
+      },
+      {
+        "address": "https+local://dns.google/dns-query",
+        "domains": [
+          "geosite:google"
+        ],
+        "skipFallback": true,
+        "queryStrategy": "UseIP",
+        "tag": "google-doh"
+      },
+      {
+        "address": "https+local://1.1.1.1/dns-query",
+        "domains": [
+          "geosite:openai",
+          "geosite:meta",
+          "geosite:spotify",
+          "geosite:netflix",
+          "geosite:reddit"
+        ],
+        "skipFallback": true,
+        "queryStrategy": "UseIP",
+        "tag": "app-doh"
+      },
+      {
+        "address": "https+local://1.1.1.1/dns-query",
+        "skipFallback": false,
+        "queryStrategy": "UseIP",
+        "tag": "cf-doh"
+      }
+    ]
+  },
+  "fakedns": [
+    {
+      "ipPool": "198.18.0.0/15",
+      "poolSize": 65535
+    },
+    {
+      "ipPool": "fc00::/18",
+      "poolSize": 65535
+    }
+  ]
+}

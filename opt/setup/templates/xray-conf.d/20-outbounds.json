@@ -1,0 +1,80 @@
+// Xray outbound fragment template.
+{
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255,
+          "tcpCongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "direct-google",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255,
+          "tcpCongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "direct-app",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255,
+          "tcpCongestion": "bbr"
+        }
+      }
+    },
+    {
+      "protocol": "socks",
+      "tag": "warp-social",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": __WARP_PROXY_PORT__
+          }
+        ]
+      }
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "blocked"
+    },
+    {
+      "protocol": "socks",
+      "tag": "warp",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": __WARP_PROXY_PORT__
+          }
+        ]
+      }
+    },
+    {
+      "tag": "dns-out",
+      "protocol": "dns",
+      "settings": {
+        "address": "1.1.1.1",
+        "port": 53
+      }
+    }
+  ]
+}
