@@ -45,15 +45,68 @@ routing_custom_domain_entry_valid() {
   return 1
 }
 
+routing_load_jsonc() {
+  local path="${1:-}"
+  python3 - <<'PY' "${path}" 2>/dev/null
+import json
+import sys
+
+path = sys.argv[1]
+
+def strip_json_comments(text):
+  result = []
+  i = 0
+  in_string = False
+  escape = False
+  length = len(text)
+  while i < length:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < length else ""
+    if in_string:
+      result.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == '"':
+        in_string = False
+      i += 1
+      continue
+    if ch == '"':
+      in_string = True
+      result.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < length and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < length and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i = min(i + 2, length)
+      continue
+    result.append(ch)
+    i += 1
+  return "".join(result)
+
+with open(path, "r", encoding="utf-8") as handle:
+  data = json.loads(strip_json_comments(handle.read()))
+print(json.dumps(data, ensure_ascii=False))
+PY
+}
+
 xray_routing_readonly_geosite_rule_print() {
   # Menampilkan rule geosite template (readonly) dari 30-routing.json
   # Rule ini dibuat oleh setup_modular.sh dan TIDAK boleh diedit dari menu.
   need_python3
   [[ -f "${XRAY_ROUTING_CONF}" ]] || return 0
-  python3 - <<'PY' "${XRAY_ROUTING_CONF}" 2>/dev/null || true
+  python3 - <<'PY' "$(routing_load_jsonc "${XRAY_ROUTING_CONF}")" 2>/dev/null || true
 import json, sys
 
-src=sys.argv[1]
+src=json.loads(sys.argv[1])
 targets=[
   "geosite:apple",
   "geosite:meta",
@@ -65,11 +118,7 @@ targets=[
 ]
 tset=set(targets)
 
-try:
-  with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
-except Exception:
-  raise SystemExit(0)
+cfg=src
 
 rules=((cfg.get("routing") or {}).get("rules") or [])
 found=None
@@ -110,11 +159,9 @@ xray_routing_default_rule_get() {
     return 0
   fi
   need_python3
-  python3 - <<'PY' "${src_file}"
+  python3 - <<'PY' "$(routing_load_jsonc "${src_file}")"
 import json, sys
-src=sys.argv[1]
-with open(src,'r',encoding='utf-8') as f:
-  cfg=json.load(f)
+cfg=json.loads(sys.argv[1])
 routing=(cfg.get('routing') or {})
 rules=routing.get('rules') or []
 mode='unknown'
@@ -173,8 +220,48 @@ xray_routing_default_rule_set() {
     python3 - <<'PY' "${XRAY_ROUTING_CONF}" "${XRAY_OUTBOUNDS_CONF}" "${tmp}" "${mode}" "${SPEED_OUTBOUND_TAG_PREFIX}" || exit 1
 import json, sys
 src, ob_src, dst, mode, speed_out_prefix = sys.argv[1:6]
+def strip_json_comments(text):
+  out = []
+  i = 0
+  n = len(text)
+  in_str = False
+  quote = ""
+  escape = False
+  while i < n:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return "".join(out)
 with open(src,'r',encoding='utf-8') as f:
-  cfg=json.load(f)
+  cfg=json.loads(strip_json_comments(f.read()))
 
 routing=(cfg.get('routing') or {})
 rules=routing.get('rules')
@@ -205,7 +292,7 @@ if idx is None:
 
 try:
   with open(ob_src,'r',encoding='utf-8') as f:
-    ob_cfg=json.load(f)
+    ob_cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   ob_cfg={}
 
@@ -835,11 +922,42 @@ xray_inbounds_all_tags_get() {
   need_python3
   [[ -f "${XRAY_INBOUNDS_CONF}" ]] || return 0
   python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" 2>/dev/null || true
-import json, sys
+import json, re, sys
 src=sys.argv[1]
+def strip_json_comments(text):
+  text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+  lines = []
+  for line in text.splitlines():
+    out = []
+    i = 0
+    in_str = False
+    esc = False
+    while i < len(line):
+      ch = line[i]
+      if in_str:
+        out.append(ch)
+        if esc:
+          esc = False
+        elif ch == '\\':
+          esc = True
+        elif ch == '"':
+          in_str = False
+        i += 1
+        continue
+      if ch == '"':
+        in_str = True
+        out.append(ch)
+        i += 1
+        continue
+      if ch == '/' and i + 1 < len(line) and line[i + 1] == '/':
+        break
+      out.append(ch)
+      i += 1
+    lines.append(''.join(out))
+  return '\n'.join(lines)
 try:
   with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
+    cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   raise SystemExit(0)
 tags=set()
@@ -881,11 +999,710 @@ network_show_summary() {
   pause
 }
 
+# shellcheck disable=SC2120
+xray_outbound_tags_list_get() {
+  # args: [outbounds_conf]
+  local src_file="${1:-${XRAY_OUTBOUNDS_CONF}}"
+  need_python3
+  [[ -f "${src_file}" ]] || return 0
+  python3 - <<'PY' "$(routing_load_jsonc "${src_file}")" 2>/dev/null || true
+import json, sys
+
+try:
+  cfg = json.loads(sys.argv[1])
+except Exception:
+  raise SystemExit(0)
+
+outbounds = cfg.get('outbounds') or []
+seen = set()
+for ob in outbounds:
+  if not isinstance(ob, dict):
+    continue
+  tag = ob.get('tag')
+  if not isinstance(tag, str):
+    continue
+  tag = tag.strip()
+  if not tag or tag in seen:
+    continue
+  seen.add(tag)
+  print(tag)
+PY
+}
+
+routing_outbound_summary_render() {
+  local default_line mode tag
+  local -a outbounds=()
+  local -a direct_users=() warp_users=() direct_inbounds=() warp_inbounds=()
+  local direct_user_count warp_user_count direct_inbound_count warp_inbound_count
+
+  title
+  echo "Routing & Outbound Summary"
+  hr
+
+  if [[ -f "${XRAY_ROUTING_CONF}" ]]; then
+    if xray_json_file_require_valid "${XRAY_ROUTING_CONF}" "Xray routing config"; then
+      default_line="$(xray_routing_default_rule_get)"
+      mode="$(printf '%s\n' "${default_line}" | awk -F'=' '/^mode=/{print $2; exit}' 2>/dev/null || true)"
+      tag="$(printf '%s\n' "${default_line}" | awk -F'=' '/^tag=/{print $2; exit}' 2>/dev/null || true)"
+      echo "Default route : mode=${mode:--} tag=${tag:--}"
+    else
+      warn "Routing conf tidak valid."
+    fi
+  else
+    warn "Routing conf tidak ditemukan: ${XRAY_ROUTING_CONF}"
+  fi
+
+  echo "WARP mode     : $(warp_mode_state_get)"
+  echo "WARP global   : $(warp_global_mode_pretty_get)"
+  if svc_exists "$(warp_backend_service_name_get)"; then
+    svc_status_line "$(warp_backend_service_name_get)"
+  else
+    echo "$(warp_backend_display_name_get): (tidak terpasang)"
+  fi
+  hr
+
+  if [[ -f "${XRAY_OUTBOUNDS_CONF}" ]]; then
+    if xray_json_file_require_valid "${XRAY_OUTBOUNDS_CONF}" "Xray outbounds config"; then
+      mapfile -t outbounds < <(xray_outbound_tags_list_get)
+      echo "Outbound tags (${#outbounds[@]}):"
+      local tag_item
+      for tag_item in "${outbounds[@]}"; do
+        [[ -n "${tag_item}" ]] || continue
+        echo "  - ${tag_item}"
+      done
+    else
+      warn "Outbound conf tidak valid."
+    fi
+  else
+    warn "Outbound conf tidak ditemukan: ${XRAY_OUTBOUNDS_CONF}"
+  fi
+  hr
+
+  mapfile -t direct_users < <(xray_routing_rule_user_list_get "dummy-direct-user" "direct" 2>/dev/null || true)
+  mapfile -t warp_users < <(xray_routing_rule_user_list_get "dummy-warp-user" "warp" 2>/dev/null || true)
+  mapfile -t direct_inbounds < <(xray_routing_rule_inbound_list_get "dummy-direct-inbounds" "direct" 2>/dev/null || true)
+  mapfile -t warp_inbounds < <(xray_routing_rule_inbound_list_get "dummy-warp-inbounds" "warp" 2>/dev/null || true)
+  direct_user_count="${#direct_users[@]}"
+  warp_user_count="${#warp_users[@]}"
+  direct_inbound_count="${#direct_inbounds[@]}"
+  warp_inbound_count="${#warp_inbounds[@]}"
+
+  echo "Route buckets:"
+  echo "  direct-google : geosite:google, geosite:apple"
+  echo "  direct-app    : geosite:openai, geosite:meta"
+  echo "  warp-social   : geosite:spotify, geosite:netflix, geosite:reddit"
+  echo "  blocked       : geosite:private, geoip:private, bittorrent"
+  echo "  dns-out       : dns-in"
+  hr
+
+  echo "User / inbound overrides:"
+  echo "  direct users  : ${direct_user_count}"
+  if (( direct_user_count > 0 )); then
+    printf '    - %s\n' "${direct_users[@]}"
+  fi
+  echo "  warp users    : ${warp_user_count}"
+  if (( warp_user_count > 0 )); then
+    printf '    - %s\n' "${warp_users[@]}"
+  fi
+  echo "  direct inb    : ${direct_inbound_count}"
+  if (( direct_inbound_count > 0 )); then
+    printf '    - %s\n' "${direct_inbounds[@]}"
+  fi
+  echo "  warp inb      : ${warp_inbound_count}"
+  if (( warp_inbound_count > 0 )); then
+    printf '    - %s\n' "${warp_inbounds[@]}"
+  fi
+  hr
+  pause
+}
+
+xray_routing_outbound_default_route_render() {
+  local default_line mode tag
+  title
+  echo "Default Route"
+  hr
+  if [[ -f "${XRAY_ROUTING_CONF}" ]]; then
+    if xray_json_file_require_valid "${XRAY_ROUTING_CONF}" "Xray routing config"; then
+      default_line="$(xray_routing_default_rule_get)"
+      mode="$(printf '%s\n' "${default_line}" | awk -F'=' '/^mode=/{print $2; exit}' 2>/dev/null || true)"
+      tag="$(printf '%s\n' "${default_line}" | awk -F'=' '/^tag=/{print $2; exit}' 2>/dev/null || true)"
+      echo "Current mode : ${mode:--}"
+      echo "Current tag  : ${tag:--}"
+    else
+      warn "Routing conf tidak valid."
+      pause
+      return 0
+    fi
+  else
+    warn "Routing conf tidak ditemukan: ${XRAY_ROUTING_CONF}"
+    pause
+    return 0
+  fi
+  hr
+  echo "Mode yang tersedia:"
+  echo "  1) direct"
+  echo "  2) warp"
+  echo "  0) Back"
+  hr
+  local c=""
+  read -r -p "Pilih: " c || { echo; return 0; }
+  case "${c}" in
+    1|direct)
+      if confirm_yn_or_back "Terapkan default route direct sekarang?"; then
+        xray_routing_default_rule_set direct
+        log "Default route disetel ke direct."
+      fi
+      ;;
+    2|warp)
+      if confirm_yn_or_back "Terapkan default route warp sekarang?"; then
+        xray_routing_default_rule_set warp
+        log "Default route disetel ke warp."
+      fi
+      ;;
+    0|kembali|k|back|b)
+      return 0
+      ;;
+    *)
+      invalid_choice
+      ;;
+  esac
+  pause
+}
+
+xray_routing_outbound_user_overrides_render() {
+  local -a direct_users=() warp_users=()
+  local direct_user_count warp_user_count
+  title
+  echo "User Overrides"
+  hr
+  mapfile -t direct_users < <(xray_routing_rule_user_list_get "dummy-direct-user" "direct" 2>/dev/null || true)
+  mapfile -t warp_users < <(xray_routing_rule_user_list_get "dummy-warp-user" "warp" 2>/dev/null || true)
+  direct_user_count="${#direct_users[@]}"
+  warp_user_count="${#warp_users[@]}"
+  echo "direct users : ${direct_user_count}"
+  if (( direct_user_count > 0 )); then
+    printf '  - %s\n' "${direct_users[@]}"
+  fi
+  echo "warp users   : ${warp_user_count}"
+  if (( warp_user_count > 0 )); then
+    printf '  - %s\n' "${warp_users[@]}"
+  fi
+  hr
+  pause
+}
+
+xray_routing_outbound_inbound_overrides_render() {
+  local -a direct_inbounds=() warp_inbounds=()
+  local direct_inbound_count warp_inbound_count
+  title
+  echo "Inbound Overrides"
+  hr
+  mapfile -t direct_inbounds < <(xray_routing_rule_inbound_list_get "dummy-direct-inbounds" "direct" 2>/dev/null || true)
+  mapfile -t warp_inbounds < <(xray_routing_rule_inbound_list_get "dummy-warp-inbounds" "warp" 2>/dev/null || true)
+  direct_inbound_count="${#direct_inbounds[@]}"
+  warp_inbound_count="${#warp_inbounds[@]}"
+  echo "direct inb : ${direct_inbound_count}"
+  if (( direct_inbound_count > 0 )); then
+    printf '  - %s\n' "${direct_inbounds[@]}"
+  fi
+  echo "warp inb   : ${warp_inbound_count}"
+  if (( warp_inbound_count > 0 )); then
+    printf '  - %s\n' "${warp_inbounds[@]}"
+  fi
+  hr
+  pause
+}
+
+xray_routing_outbound_domain_buckets_render() {
+  title
+  echo "Domain Buckets"
+  hr
+  echo "direct-google : geosite:google, geosite:apple"
+  echo "direct-app    : geosite:openai, geosite:meta"
+  echo "warp-social   : geosite:spotify, geosite:netflix, geosite:reddit"
+  echo "blocked       : geosite:private, geoip:private, bittorrent"
+  echo "dns-out       : dns-in"
+  hr
+  if [[ -f "${XRAY_ROUTING_CONF}" ]] && xray_json_file_require_valid "${XRAY_ROUTING_CONF}" "Xray routing config"; then
+    xray_routing_readonly_geosite_rule_print || true
+  fi
+  hr
+  pause
+}
+
+xray_routing_custom_list_entries_render() {
+  local mode="$1"
+  local src_file="${2:-${XRAY_ROUTING_CONF}}"
+  local marker outbound header
+  local -a entries=()
+
+  case "${mode}" in
+    direct)
+      marker="regexp:^$"
+      outbound="direct"
+      header="Custom DIRECT Entries"
+      ;;
+    warp)
+      marker="regexp:^\$WARP"
+      outbound="warp"
+      header="Custom WARP Entries"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  mapfile -t entries < <(xray_routing_custom_domain_list_get "${marker}" "${outbound}" "${src_file}" 2>/dev/null || true)
+  echo "${header}:"
+  if (( ${#entries[@]} == 0 )); then
+    echo "  (kosong)"
+    return 0
+  fi
+  local i ent
+  for (( i=0; i<${#entries[@]}; i++ )); do
+    ent="${entries[$i]}"
+    printf "  %2d. %s\n" "$((i + 1))" "${ent}"
+  done
+}
+
+xray_routing_custom_lists_summary_render() {
+  local src_file="${1:-${XRAY_ROUTING_CONF}}"
+  local default_line mode tag
+  local dd wd
+
+  title
+  echo "Custom Domain/Geosite Lists"
+  hr
+  if [[ -f "${src_file}" ]] && xray_json_file_require_valid "${src_file}" "Xray routing config"; then
+    default_line="$(xray_routing_default_rule_get "${src_file}")"
+    mode="$(printf '%s\n' "${default_line}" | awk -F'=' '/^mode=/{print $2; exit}' 2>/dev/null || true)"
+    tag="$(printf '%s\n' "${default_line}" | awk -F'=' '/^tag=/{print $2; exit}' 2>/dev/null || true)"
+    printf "%-14s : mode=%s tag=%s\n" "Default Route" "${mode:--}" "${tag:--}"
+  fi
+  dd="$(xray_routing_custom_domain_list_get "regexp:^$" "direct" "${src_file}" | wc -l | tr -d ' ')"
+  wd="$(xray_routing_custom_domain_list_get "regexp:^\$WARP" "warp" "${src_file}" | wc -l | tr -d ' ')"
+  [[ "${dd}" =~ ^[0-9]+$ ]] || dd=0
+  [[ "${wd}" =~ ^[0-9]+$ ]] || wd=0
+  printf "%-14s : %s\n" "DIRECT Count" "${dd}"
+  printf "%-14s : %s\n" "WARP Count" "${wd}"
+  hr
+  echo "Readonly Template Geosite:"
+  xray_routing_readonly_geosite_rule_print || true
+  hr
+  xray_routing_custom_list_entries_render direct "${src_file}"
+  hr
+  xray_routing_custom_list_entries_render warp "${src_file}"
+  hr
+  pause
+}
+
+xray_routing_custom_lists_menu() {
+  local routing_candidate=""
+  local pending_changes="false"
+  local source_file="" c="" ent="" mode=""
+
+  while true; do
+    source_file="${routing_candidate:-${XRAY_ROUTING_CONF}}"
+    if ! xray_json_file_require_valid "${source_file}" "Xray routing config"; then
+      title
+      echo "Routing & Outbound > Custom Lists"
+      hr
+      warn "Menu diblok karena routing JSON invalid. Perbaiki dulu sebelum lanjut."
+      hr
+      pause
+      return 0
+    fi
+
+    local dd wd
+    dd="$(xray_routing_custom_domain_list_get "regexp:^$" "direct" "${source_file}" | wc -l | tr -d ' ')"
+    wd="$(xray_routing_custom_domain_list_get "regexp:^\$WARP" "warp" "${source_file}" | wc -l | tr -d ' ')"
+    [[ "${dd}" =~ ^[0-9]+$ ]] || dd=0
+    [[ "${wd}" =~ ^[0-9]+$ ]] || wd=0
+
+    title
+    echo "Routing & Outbound > Custom Lists"
+    hr
+    printf "%-14s : %s\n" "DIRECT Count" "${dd}"
+    printf "%-14s : %s\n" "WARP Count" "${wd}"
+    if [[ "${pending_changes}" == "true" ]]; then
+      printf "%-14s : %s\n" "Staging" "pending apply"
+    fi
+    hr
+    echo "  1) Summary"
+    echo "  2) Show DIRECT entries"
+    echo "  3) Show WARP entries"
+    echo "  4) Add entry to DIRECT"
+    echo "  5) Add entry to WARP"
+    echo "  6) Move entry DIRECT <-> WARP"
+    echo "  7) Remove entry"
+    if [[ "${pending_changes}" == "true" ]]; then
+      echo "  8) Apply staged changes"
+      echo "  9) Discard staged changes"
+    fi
+    echo "  0) Back"
+    hr
+    read -r -p "Pilih: " c
+
+    if is_back_choice "${c}"; then
+      if [[ "${pending_changes}" == "true" ]]; then
+        local back_rc=0
+        if confirm_yn_or_back "Apply staged custom list changes sebelum keluar? Pilih no untuk membuang staging."; then
+          if ! xray_routing_apply_candidate_file "${routing_candidate}"; then
+            pause
+            continue
+          fi
+        else
+          back_rc=$?
+          if (( back_rc == 2 )); then
+            continue
+          fi
+        fi
+      fi
+      xray_stage_candidate_cleanup "${routing_candidate}"
+      return 0
+    fi
+
+    case "${c}" in
+      1)
+        xray_routing_custom_lists_summary_render "${source_file}"
+        ;;
+      2)
+        title
+        echo "Routing & Outbound > Custom DIRECT Entries"
+        hr
+        xray_routing_custom_list_entries_render direct "${source_file}"
+        hr
+        pause
+        ;;
+      3)
+        title
+        echo "Routing & Outbound > Custom WARP Entries"
+        hr
+        xray_routing_custom_list_entries_render warp "${source_file}"
+        hr
+        pause
+        ;;
+      4|5)
+        if [[ "${c}" == "4" ]]; then
+          mode="direct"
+        else
+          mode="warp"
+        fi
+        read -r -p "Entry (contoh: geosite:twitter / example.com) (atau kembali): " ent
+        if is_back_choice "${ent}"; then
+          continue
+        fi
+        ent="$(echo "${ent}" | tr -d '[:space:]')"
+        if [[ -z "${ent}" || "${ent}" == "regexp:^$" || "${ent}" == "regexp:^\$WARP" ]]; then
+          warn "Entry tidak valid / reserved"
+          pause
+          continue
+        fi
+        if ! routing_custom_domain_entry_valid "${ent}"; then
+          warn "Entry harus berupa geosite:nama atau domain yang valid."
+          pause
+          continue
+        fi
+        if is_readonly_geosite_domain "${ent}"; then
+          warn "Readonly geosite tidak boleh diubah dari menu ini: ${ent}"
+          pause
+          continue
+        fi
+        if ! confirm_yn_or_back "Stage entry ${ent} ke ${mode^^} sekarang?"; then
+          warn "Perubahan custom lists dibatalkan."
+          pause
+          continue
+        fi
+        if ! xray_routing_candidate_prepare routing_candidate; then
+          warn "Gagal menyiapkan staging routing."
+          pause
+          continue
+        fi
+        if ! xray_routing_custom_domain_entry_set_mode_in_file "${routing_candidate}" "${routing_candidate}" "${mode}" "${ent}"; then
+          warn "Gagal men-stage entry custom list."
+          pause
+          continue
+        fi
+        pending_changes="true"
+        log "Entry di-stage ${mode^^}: ${ent}"
+        pause
+        ;;
+      6)
+        local -a direct_entries=() warp_entries=()
+        local source_mode="" target_mode=""
+        mapfile -t direct_entries < <(xray_routing_custom_domain_list_get "regexp:^$" "direct" "${source_file}" 2>/dev/null || true)
+        mapfile -t warp_entries < <(xray_routing_custom_domain_list_get "regexp:^\$WARP" "warp" "${source_file}" 2>/dev/null || true)
+        if (( ${#direct_entries[@]} == 0 && ${#warp_entries[@]} == 0 )); then
+          warn "Belum ada entry di custom DIRECT/WARP list."
+          pause
+          continue
+        fi
+        title
+        echo "Routing & Outbound > Move Entry DIRECT <-> WARP"
+        hr
+        echo "Custom DIRECT Entries:"
+        if (( ${#direct_entries[@]} == 0 )); then
+          echo "  (kosong)"
+        else
+          local i
+          for (( i=0; i<${#direct_entries[@]}; i++ )); do
+            printf "  D%-2d. %s\n" "$((i + 1))" "${direct_entries[$i]}"
+          done
+        fi
+        hr
+        echo "Custom WARP Entries:"
+        if (( ${#warp_entries[@]} == 0 )); then
+          echo "  (kosong)"
+        else
+          local j
+          for (( j=0; j<${#warp_entries[@]}; j++ )); do
+            printf "  W%-2d. %s\n" "$((j + 1))" "${warp_entries[$j]}"
+          done
+        fi
+        hr
+        echo "Input bisa berupa:"
+        echo "  - nomor dengan prefix list, contoh: D1 atau W2"
+        echo "  - atau nama entry persis"
+        hr
+        read -r -p "Entry yang dipindah (atau kembali): " ent
+        if is_back_choice "${ent}"; then
+          continue
+        fi
+        ent="$(echo "${ent}" | tr -d '[:space:]')"
+        if [[ -z "${ent}" ]]; then
+          warn "Entry kosong"
+          pause
+          continue
+        fi
+        if [[ "${ent}" =~ ^[Dd]([0-9]+)$ ]]; then
+          local didx="${BASH_REMATCH[1]}"
+          if (( didx < 1 || didx > ${#direct_entries[@]} )); then
+            warn "Nomor DIRECT tidak ditemukan"
+            pause
+            continue
+          fi
+          ent="${direct_entries[$((didx - 1))]}"
+        elif [[ "${ent}" =~ ^[Ww]([0-9]+)$ ]]; then
+          local widx="${BASH_REMATCH[1]}"
+          if (( widx < 1 || widx > ${#warp_entries[@]} )); then
+            warn "Nomor WARP tidak ditemukan"
+            pause
+            continue
+          fi
+          ent="${warp_entries[$((widx - 1))]}"
+        fi
+        if is_readonly_geosite_domain "${ent}"; then
+          warn "Readonly geosite tidak boleh dipindah dari menu ini: ${ent}"
+          pause
+          continue
+        fi
+
+        local item
+        for item in "${direct_entries[@]}"; do
+          if [[ "${item}" == "${ent}" ]]; then
+            source_mode="direct"
+            break
+          fi
+        done
+        if [[ -z "${source_mode}" ]]; then
+          for item in "${warp_entries[@]}"; do
+            if [[ "${item}" == "${ent}" ]]; then
+              source_mode="warp"
+              break
+            fi
+          done
+        fi
+
+        if [[ -z "${source_mode}" ]]; then
+          warn "Entry tidak ditemukan di custom DIRECT/WARP list: ${ent}"
+          pause
+          continue
+        fi
+        if [[ "${source_mode}" == "direct" ]]; then
+          target_mode="warp"
+        else
+          target_mode="direct"
+        fi
+
+        title
+        echo "Routing & Outbound > Custom Lists"
+        hr
+        printf "%-14s : %s\n" "Entry" "${ent}"
+        printf "%-14s : %s\n" "Source List" "${source_mode^^}"
+        printf "%-14s : %s\n" "Target List" "${target_mode^^}"
+        hr
+        if ! confirm_yn_or_back "Pindahkan entry ${ent} dari ${source_mode^^} ke ${target_mode^^} sekarang?"; then
+          warn "Move custom list dibatalkan."
+          pause
+          continue
+        fi
+        if ! xray_routing_candidate_prepare routing_candidate; then
+          warn "Gagal menyiapkan staging routing."
+          pause
+          continue
+        fi
+        if ! xray_routing_custom_domain_entry_set_mode_in_file "${routing_candidate}" "${routing_candidate}" "${target_mode}" "${ent}"; then
+          warn "Gagal men-stage perpindahan entry."
+          pause
+          continue
+        fi
+        pending_changes="true"
+        log "Entry dipindah ${source_mode^^} -> ${target_mode^^}: ${ent}"
+        pause
+        ;;
+      7)
+        read -r -p "Entry yang dihapus (atau kembali): " ent
+        if is_back_choice "${ent}"; then
+          continue
+        fi
+        ent="$(echo "${ent}" | tr -d '[:space:]')"
+        if [[ -z "${ent}" || "${ent}" == "regexp:^$" || "${ent}" == "regexp:^\$WARP" ]]; then
+          warn "Entry tidak valid / reserved"
+          pause
+          continue
+        fi
+        if is_readonly_geosite_domain "${ent}"; then
+          warn "Readonly geosite tidak bisa dihapus dari menu ini: ${ent}"
+          pause
+          continue
+        fi
+        if ! confirm_yn_or_back "Hapus entry ${ent} dari custom lists sekarang?"; then
+          warn "Penghapusan custom list dibatalkan."
+          pause
+          continue
+        fi
+        if ! xray_routing_candidate_prepare routing_candidate; then
+          warn "Gagal menyiapkan staging routing."
+          pause
+          continue
+        fi
+        if ! xray_routing_custom_domain_entry_set_mode_in_file "${routing_candidate}" "${routing_candidate}" off "${ent}"; then
+          warn "Gagal men-stage penghapusan entry."
+          pause
+          continue
+        fi
+        pending_changes="true"
+        log "Entry di-stage untuk dihapus: ${ent}"
+        pause
+        ;;
+      8)
+        if [[ "${pending_changes}" != "true" ]]; then
+          warn "Pilihan tidak valid"
+          sleep 1
+          continue
+        fi
+        if ! confirm_menu_apply_now "Apply staged custom list changes sekarang?"; then
+          pause
+          continue
+        fi
+        if ! xray_routing_apply_candidate_file "${routing_candidate}"; then
+          pause
+          continue
+        fi
+        xray_stage_candidate_cleanup "${routing_candidate}"
+        routing_candidate=""
+        pending_changes="false"
+        log "Staged custom list changes diterapkan."
+        pause
+        ;;
+      9)
+        if [[ "${pending_changes}" != "true" ]]; then
+          warn "Pilihan tidak valid"
+          sleep 1
+          continue
+        fi
+        if confirm_menu_apply_now "Buang staged custom list changes?"; then
+          xray_stage_candidate_cleanup "${routing_candidate}"
+          routing_candidate=""
+          pending_changes="false"
+          log "Staged custom list changes dibuang."
+        fi
+        pause
+        ;;
+      *)
+        invalid_choice
+        ;;
+    esac
+  done
+}
+
+xray_routing_outbound_conflict_check_render() {
+  local -a direct_users=() warp_users=() direct_inbounds=() warp_inbounds=()
+  local user_conflicts=0 inbound_conflicts=0 entry
+  declare -A direct_user_set=()
+  declare -A warp_user_set=()
+  declare -A direct_inbound_set=()
+  declare -A warp_inbound_set=()
+
+  title
+  echo "Conflict Check"
+  hr
+  mapfile -t direct_users < <(xray_routing_rule_user_list_get "dummy-direct-user" "direct" 2>/dev/null || true)
+  mapfile -t warp_users < <(xray_routing_rule_user_list_get "dummy-warp-user" "warp" 2>/dev/null || true)
+  mapfile -t direct_inbounds < <(xray_routing_rule_inbound_list_get "dummy-direct-inbounds" "direct" 2>/dev/null || true)
+  mapfile -t warp_inbounds < <(xray_routing_rule_inbound_list_get "dummy-warp-inbounds" "warp" 2>/dev/null || true)
+
+  for entry in "${direct_users[@]}"; do
+    [[ -n "${entry}" ]] && direct_user_set["${entry}"]=1
+  done
+  for entry in "${warp_users[@]}"; do
+    [[ -n "${entry}" ]] && warp_user_set["${entry}"]=1
+  done
+  for entry in "${direct_inbounds[@]}"; do
+    [[ -n "${entry}" ]] && direct_inbound_set["${entry}"]=1
+  done
+  for entry in "${warp_inbounds[@]}"; do
+    [[ -n "${entry}" ]] && warp_inbound_set["${entry}"]=1
+  done
+
+  for entry in "${!direct_user_set[@]}"; do
+    [[ -n "${warp_user_set[${entry}]:-}" ]] && ((user_conflicts+=1))
+  done
+  for entry in "${!direct_inbound_set[@]}"; do
+    [[ -n "${warp_inbound_set[${entry}]:-}" ]] && ((inbound_conflicts+=1))
+  done
+
+  echo "user conflicts    : ${user_conflicts}"
+  echo "inbound conflicts : ${inbound_conflicts}"
+  hr
+  echo "Catatan: jika nilai > 0, ada entri yang terikat ke direct dan warp sekaligus."
+  hr
+  pause
+}
+
+routing_outbound_summary_menu() {
+  while true; do
+    title
+    xray_network_menu_title "Routing & Outbound"
+    hr
+    echo "  1) Summary"
+    echo "  2) User Overrides"
+    echo "  3) Inbound Overrides"
+    echo "  4) Domain Buckets"
+    echo "  5) Custom Lists"
+    echo "  6) Conflict Check"
+    echo "  0) Back"
+    hr
+    read -r -p "Pilih: " c
+    case "${c}" in
+      1) routing_outbound_summary_render ;;
+      2) xray_routing_outbound_user_overrides_render ;;
+      3) xray_routing_outbound_inbound_overrides_render ;;
+      4) xray_routing_outbound_domain_buckets_render ;;
+      5) xray_routing_custom_lists_menu ;;
+      6) xray_routing_outbound_conflict_check_render ;;
+      0|kembali|k|back|b) break ;;
+      *) invalid_choice ;;
+    esac
+  done
+}
+
 warp_global_mode_get() {
   local src_file="${1:-${XRAY_ROUTING_CONF}}"
   xray_routing_default_rule_get "${src_file}" | awk -F'=' '/^mode=/{print $2; exit}' 2>/dev/null || true
 }
 
+# shellcheck disable=SC2120
 warp_global_mode_pretty_get() {
   local mode
   mode="$(warp_global_mode_get "${1:-${XRAY_ROUTING_CONF}}")"
@@ -906,9 +1723,49 @@ xray_routing_rule_user_list_get() {
   python3 - <<'PY' "${src_file}" "${marker}" "${outbound}" 2>/dev/null || true
 import json, sys
 src, marker, outbound = sys.argv[1:4]
+def strip_json_comments(text):
+  out = []
+  i = 0
+  n = len(text)
+  in_str = False
+  quote = ""
+  escape = False
+  while i < n:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return "".join(out)
 try:
   with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
+    cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   raise SystemExit(0)
 rules=((cfg.get('routing') or {}).get('rules') or [])
@@ -944,9 +1801,49 @@ xray_routing_rule_inbound_list_get() {
   python3 - <<'PY' "${src_file}" "${marker}" "${outbound}" 2>/dev/null || true
 import json, sys
 src, marker, outbound = sys.argv[1:4]
+def strip_json_comments(text):
+  out = []
+  i = 0
+  n = len(text)
+  in_str = False
+  quote = ""
+  escape = False
+  while i < n:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return "".join(out)
 try:
   with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
+    cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   raise SystemExit(0)
 rules=((cfg.get('routing') or {}).get('rules') or [])
@@ -982,9 +1879,49 @@ xray_routing_custom_domain_list_get() {
   python3 - <<'PY' "${src_file}" "${marker}" "${outbound}" 2>/dev/null || true
 import json, sys
 src, marker, outbound = sys.argv[1:4]
+def strip_json_comments(text):
+  out = []
+  i = 0
+  n = len(text)
+  in_str = False
+  quote = ""
+  escape = False
+  while i < n:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return "".join(out)
 try:
   with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
+    cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   raise SystemExit(0)
 rules=((cfg.get('routing') or {}).get('rules') or [])
@@ -1042,8 +1979,48 @@ xray_routing_default_rule_set_in_file() {
   python3 - <<'PY' "${src_conf}" "${dst_conf}" "${mode}" || return 1
 import json, os, sys, tempfile
 src, dst, mode = sys.argv[1:4]
+def strip_json_comments(text):
+  out = []
+  i = 0
+  n = len(text)
+  in_str = False
+  quote = ""
+  escape = False
+  while i < n:
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < n else ""
+    if in_str:
+      out.append(ch)
+      if escape:
+        escape = False
+      elif ch == "\\":
+        escape = True
+      elif ch == quote:
+        in_str = False
+      i += 1
+      continue
+    if ch in ('"', "'"):
+      in_str = True
+      quote = ch
+      out.append(ch)
+      i += 1
+      continue
+    if ch == "/" and nxt == "/":
+      i += 2
+      while i < n and text[i] not in "\r\n":
+        i += 1
+      continue
+    if ch == "/" and nxt == "*":
+      i += 2
+      while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+        i += 1
+      i += 2
+      continue
+    out.append(ch)
+    i += 1
+  return "".join(out)
 with open(src,'r',encoding='utf-8') as f:
-  cfg=json.load(f)
+  cfg=json.loads(strip_json_comments(f.read()))
 routing=(cfg.get('routing') or {})
 rules=routing.get('rules') or []
 if not isinstance(rules, list):
@@ -1535,11 +2512,42 @@ xray_inbounds_all_client_emails_get() {
   need_python3
   [[ -f "${XRAY_INBOUNDS_CONF}" ]] || return 0
   python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" 2>/dev/null || true
-import json, sys
+import json, re, sys
 src=sys.argv[1]
+def strip_json_comments(text):
+  text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+  lines = []
+  for line in text.splitlines():
+    out = []
+    i = 0
+    in_str = False
+    esc = False
+    while i < len(line):
+      ch = line[i]
+      if in_str:
+        out.append(ch)
+        if esc:
+          esc = False
+        elif ch == '\\':
+          esc = True
+        elif ch == '"':
+          in_str = False
+        i += 1
+        continue
+      if ch == '"':
+        in_str = True
+        out.append(ch)
+        i += 1
+        continue
+      if ch == '/' and i + 1 < len(line) and line[i + 1] == '/':
+        break
+      out.append(ch)
+      i += 1
+    lines.append(''.join(out))
+  return '\n'.join(lines)
 try:
   with open(src,'r',encoding='utf-8') as f:
-    cfg=json.load(f)
+    cfg=json.loads(strip_json_comments(f.read()))
 except Exception:
   raise SystemExit(0)
 emails=set()
@@ -1613,7 +2621,7 @@ warp_controls_summary() {
   done
 
   echo "WARP Mode   : ${mode}"
-  echo "WARP Global : ${global}"
+  echo "Default Route : ${global}"
   echo "${backend_name} : ${wire_state}"
   echo "Override    : user warp=${wu}, user direct=${du} | inbound warp=${wi}, inbound direct=${di}"
   echo "Conflict    : user=${user_conflicts}, inbound=${inbound_conflicts}"

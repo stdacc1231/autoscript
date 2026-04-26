@@ -3952,7 +3952,6 @@ warp_controls_menu() {
     "3|WARP Global"
     "4|Per User"
     "5|Per Inbound"
-    "6|Per Domain"
     "0|Back"
   )
   while true; do
@@ -3991,7 +3990,6 @@ warp_controls_menu() {
       3) menu_run_isolated_report "WARP Global" warp_global_menu ;;
       4) menu_run_isolated_report "WARP Per User" warp_per_user_menu ;;
       5) menu_run_isolated_report "WARP Per Inbounds" warp_per_inbounds_menu ;;
-      6) menu_run_isolated_report "WARP Domain Geosite" warp_domain_geosite_menu ;;
       0|kembali|k|back|b) break ;;
       *) warn "Pilihan tidak valid" ; sleep 1 ;;
     esac
