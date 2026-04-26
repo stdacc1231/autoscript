@@ -424,6 +424,7 @@ autoscript_full_hard_uninstall_apply() {
     "/usr/local/bin/badvpn-udpgw"
     "/usr/local/bin/wgcf"
     "/usr/local/bin/wireproxy"
+    "${MANAGE_AUTO_OPEN_PROFILED_FILE:-/etc/profile.d/99-autoscript-manage.sh}"
     "/etc/wireguard/${SSH_NETWORK_WARP_INTERFACE:-warp-ssh0}.conf"
     "/etc/wireguard/warp-xray0.conf"
     "/run/lock/xray-backup-restore.lock"

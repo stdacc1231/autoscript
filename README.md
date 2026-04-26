@@ -8,37 +8,23 @@
   <img src="https://img.shields.io/badge/WARP-Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare WARP">
 </p>
 
-> Platform instalasi dan operasi harian untuk VPS Linux yang menjalankan `Xray`, `SSH/WebSocket`, `ZIVPN`, `BadVPN`, `WARP`, `Account Portal`, dan bot `Telegram` dalam satu stack terpadu.
-
-`autoscript` ditujukan untuk operator yang membutuhkan satu repositori untuk membangun, mengoperasikan, dan memelihara layanan akses berbasis VPS secara konsisten. Fokus utamanya adalah menggabungkan proses bootstrap host, pengelolaan akun, kontrol jaringan, observability, backup/restore, dan tooling operasional ke dalam satu alur kerja yang praktis.
-
 <p align="center">
   <img src="https://img.shields.io/badge/Manage-CLI-1f2937?style=flat-square&logo=gnubash&logoColor=white" alt="Manage CLI">
   <img src="https://img.shields.io/badge/Portal-Account-2563eb?style=flat-square&logo=vercel&logoColor=white" alt="Account Portal">
+  <img src="https://img.shields.io/badge/Access-SSH%2FWebSocket-0ea5e9?style=flat-square&logo=protonvpn&logoColor=white" alt="SSH WebSocket">
+  <img src="https://img.shields.io/badge/Utility-BadVPN-475569?style=flat-square&logo=wireguard&logoColor=white" alt="BadVPN">
+  <img src="https://img.shields.io/badge/Service-ZIVPN-16a34a?style=flat-square&logo=shield&logoColor=white" alt="ZIVPN">
   <img src="https://img.shields.io/badge/Support-Backup%20%26%20Restore-0f766e?style=flat-square&logo=icloud&logoColor=white" alt="Backup and Restore">
-  <img src="https://img.shields.io/badge/Transport-VMess%20TCP%2BTLS-7c3aed?style=flat-square&logo=buffer&logoColor=white" alt="VMess TCP TLS">
-  <img src="https://img.shields.io/badge/Transport-VLESS%20XHTTP3-0891b2?style=flat-square&logo=quic&logoColor=white" alt="VLESS XHTTP3">
+  <img src="https://img.shields.io/badge/Zero%20Trust-Cloudflare%20WARP-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare WARP">
 </p>
 
-## Overview
+## Fokus
 
-Dengan `autoscript`, operator dapat:
-
-- melakukan bootstrap VPS dari nol melalui `run.sh`
-- menjalankan ingress publik berbasis `edge-mux`
-- mengelola akun `Xray` dan `SSH` dari CLI modular `manage`
-- menghubungkan lifecycle akun `SSH` dengan runtime `ZIVPN`
-- mengoperasikan `WARP`, `BadVPN`, `Domain Guard`, `Account Portal`, backup/restore, dan bot `Telegram`
-
-## Why Autoscript
-
-- **Satu alur instalasi** melalui `run.sh`
-- **Satu panel operasi harian** melalui `manage`
-- **Layanan inti lengkap** untuk `Xray`, `SSH`, `ZIVPN`, dan `WARP`
-- **Portal akun read-only** per user
-- **Bot Telegram** untuk operasi jarak jauh
-- **Backup/restore lokal dan cloud**
-- **Edge gateway tunggal** untuk multiplex trafik publik
+- `autoscript` = repo utama untuk stack VPS lengkap
+- `run.sh` = bootstrap host
+- `manage` = panel operasi harian
+- `Xray`, `SSH/WebSocket`, `ZIVPN`, `BadVPN`, `WARP`
+- `Account Portal`, `Bot Telegram`, `Backup/Restore`, `Domain Guard`, `Uninstall`
 
 ## Status Biaya
 
@@ -95,10 +81,11 @@ Internet / Cloudflare
 
 ### Transport Xray
 
+- `VMess TCP+TLS`
+- `VLESS XHTTP3`
 - `VLESS WS`
 - `VLESS HUP`
 - `VLESS XHTTP`
-- `VLESS XHTTP3`
 - `VLESS gRPC`
 - `VLESS TCP+TLS`
 - `VMess WS`
@@ -278,6 +265,66 @@ Untuk `VLESS XHTTP3`, portal juga dapat menyediakan file profile `xray.json` bil
 - `SSH Network` mendukung WARP host/global dan mode per-user
 - backend dapat mengikuti `wireproxy` atau `Zero Trust` sesuai state aktif
 
+## Cloudflare Zero Trust Setup
+
+Bagian ini dipakai saat Anda ingin menyiapkan `WARP Zero Trust` dengan service token.
+
+### 1) Device enrollment permissions
+
+Masuk ke:
+
+`Team & Resources -> Devices -> Management -> Device enrollment permissions -> Manage -> Policies`
+
+Lalu:
+
+1. add rule `Policies`
+2. nama bebas
+3. `Rule action`: `service auth`
+4. `Include selector`: `Any Access Service Token`
+5. save
+
+### 2) Device Profile
+
+Masuk ke:
+
+`Team & Resources -> Devices -> Device Profile`
+
+Lalu:
+
+1. `Create new profile`
+2. nama bebas
+3. selector -> `user email`
+4. operator -> `is`
+5. value: `non_identity@<team-name>.cloudflareaccess.com`
+6. `+ AND condition`
+7. selector -> `operating system`
+8. operator -> `is`
+9. value: `Linux`
+10. `Device tunnel protocol`: `MASQUE`
+11. `Service mode`: `local proxy mode port 40000`
+12. save
+13. lalu save sekali lagi
+
+### 3) Service Token
+
+Masuk ke:
+
+`Access controls -> Service Credentials -> Service Token`
+
+Lalu:
+
+1. create service token
+2. nama bebas
+3. token durasi bebas
+4. generate token
+5. copy `Client ID` token dan `Client Secret` token
+
+Catatan:
+
+- Untuk enrollment headless Linux, `Device enrollment permissions` dengan `Service Auth` adalah bagian penting.
+- `Device Profile` di atas dipakai sebagai pelengkap konfigurasi client, bukan pengganti service token.
+- Pada host, kredensial biasanya dipakai oleh file `mdm.xml` di `/var/lib/cloudflare-warp/mdm.xml` dan config Zero Trust di `/etc/autoscript/warp-zerotrust/config.env`.
+
 ## Backup and Restore
 
 `Backup/Restore` tersedia di:
@@ -377,4 +424,4 @@ Jika Anda membutuhkan satu repositori yang dapat:
 - menyediakan portal akun dan bot Telegram
 - tetap nyaman dipakai untuk maintenance, troubleshooting, dan recovery
 
-maka `autoscript` memang dibangun untuk kebutuhan tersebut.
+maka `autoscript` memang dibangun untuk kebutuhan tersebut, dengan tampilan yang lebih rapi dan pengalaman operasional yang tetap solid.
