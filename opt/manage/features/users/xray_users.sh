@@ -315,12 +315,19 @@ xray_add_client() {
       py_out="$(
         python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" "${tmp}" "${proto}" "${email}" "${cred}"
 import json
+import re
 import sys
 
 src, dst, proto, email, cred = sys.argv[1:6]
 
-with open(src, "r", encoding="utf-8") as f:
-  cfg = json.load(f)
+def load_jsonc(path):
+  with open(path, "r", encoding="utf-8") as f:
+    raw = f.read()
+  raw = re.sub(r'//.*', '', raw)
+  raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+  return json.loads(raw)
+
+cfg = load_jsonc(src)
 
 inbounds = cfg.get("inbounds", [])
 if not isinstance(inbounds, list):
@@ -448,14 +455,20 @@ xray_delete_client() {
       py_out="$(
         python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" "${XRAY_ROUTING_CONF}" "${tmp_inb}" "${tmp_rt}" "${proto}" "${email}"
 import json
+import re
 import sys
 
 inb_src, rt_src, inb_dst, rt_dst, proto, email = sys.argv[1:7]
 
-with open(inb_src, "r", encoding="utf-8") as f:
-  inb_cfg = json.load(f)
-with open(rt_src, "r", encoding="utf-8") as f:
-  rt_cfg = json.load(f)
+def load_jsonc(path):
+  with open(path, "r", encoding="utf-8") as f:
+    raw = f.read()
+  raw = re.sub(r'//.*', '', raw)
+  raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+  return json.loads(raw)
+
+inb_cfg = load_jsonc(inb_src)
+rt_cfg = load_jsonc(rt_src)
 
 inbounds = inb_cfg.get("inbounds", [])
 if not isinstance(inbounds, list):
@@ -594,12 +607,19 @@ xray_reset_client_credential() {
       py_out="$(
         python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" "${tmp}" "${proto}" "${email}" "${cred}"
 import json
+import re
 import sys
 
 src, dst, proto, email, cred = sys.argv[1:6]
 
-with open(src, "r", encoding="utf-8") as f:
-  cfg = json.load(f)
+def load_jsonc(path):
+  with open(path, "r", encoding="utf-8") as f:
+    raw = f.read()
+  raw = re.sub(r'//.*', '', raw)
+  raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+  return json.loads(raw)
+
+cfg = load_jsonc(src)
 
 inbounds = cfg.get("inbounds", [])
 if not isinstance(inbounds, list):
@@ -715,11 +735,17 @@ xray_routing_set_user_in_marker() {
 
       py_out="$(
         python3 - <<'PY' "${XRAY_ROUTING_CONF}" "${tmp}" "${marker}" "${email}" "${state}" "${outbound_tag}"
-import json, sys
+import json, re, sys
 src, dst, marker, email, state, outbound_tag = sys.argv[1:7]
 
-with open(src, "r", encoding="utf-8") as f:
-  cfg = json.load(f)
+def load_jsonc(path):
+  with open(path, "r", encoding="utf-8") as f:
+    raw = f.read()
+  raw = re.sub(r'//.*', '', raw)
+  raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+  return json.loads(raw)
+
+cfg = load_jsonc(src)
 
 routing = cfg.get("routing") or {}
 rules = routing.get("rules")
@@ -857,10 +883,13 @@ xray_extract_endpoints() {
   local proto="$1"
   need_python3
   python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" "${proto}"
-import json, sys
+import json, re, sys
 src, proto = sys.argv[1:3]
 with open(src,'r',encoding='utf-8') as f:
-  cfg=json.load(f)
+  raw=f.read()
+raw = re.sub(r'//.*', '', raw)
+raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+cfg=json.loads(raw)
 
 seen=set()
 for ib in cfg.get('inbounds', []) or []:
@@ -1116,7 +1145,13 @@ mark_max = int(mark_max_raw)
 
 def load_json(path):
   with open(path, "r", encoding="utf-8") as f:
-    return json.load(f)
+    raw = f.read()
+  return json.loads(strip_json_comments(raw))
+
+def strip_json_comments(text):
+  text = re.sub(r'//.*', '', text)
+  text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+  return text
 
 def dump_json(path, obj):
   with open(path, "w", encoding="utf-8") as f:
@@ -2232,7 +2267,10 @@ if proto == "vless" and helper is None:
 
 def load_jsonc(path):
   with open(path, "r", encoding="utf-8") as handle:
-    return json.load(handle)
+    raw = handle.read()
+  raw = re.sub(r'//.*', '', raw)
+  raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+  return json.loads(raw)
 
 def build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto):
   return helper.build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto) if helper is not None else None
@@ -2417,7 +2455,10 @@ if not speed_enabled or speed_down_mbit <= 0 or speed_up_mbit <= 0:
 cred = forced_cred
 if not cred and os.path.isfile(inbounds_file):
   try:
-    cfg = json.load(open(inbounds_file, "r", encoding="utf-8"))
+    raw = open(inbounds_file, "r", encoding="utf-8").read()
+    raw = re.sub(r'//.*', '', raw)
+    raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+    cfg = json.loads(raw)
     def inbound_matches_proto(ib, p):
       if not isinstance(ib, dict):
         return False
@@ -3240,12 +3281,16 @@ xray_user_current_credential_get() {
   need_python3
   python3 - <<'PY' "${XRAY_INBOUNDS_CONF}" "${proto}" "${username}"
 import json
+import re
 import sys
 
 src, proto, username = sys.argv[1:4]
 email = f"{username}@{proto}"
 try:
-    cfg = json.load(open(src, "r", encoding="utf-8"))
+    raw = open(src, "r", encoding="utf-8").read()
+    raw = re.sub(r'//.*', '', raw)
+    raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)
+    cfg = json.loads(raw)
 except Exception:
     raise SystemExit(0)
 
