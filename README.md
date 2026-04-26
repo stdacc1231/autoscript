@@ -414,6 +414,13 @@ Detail lanjutan tersedia di:
 - restore bersifat live dan dapat menimpa runtime aktif
 - `Tools > Uninstall` bersifat destruktif dan ditujukan untuk teardown total stack
 
+## Lisensi
+
+Repo ini menggunakan lisensi `GPL-3.0-or-later`.
+
+- detail lengkap tersedia di file [`LICENSE`](/root/project/autoscript/LICENSE)
+- website lisensi VPS dan flow aktivasi produk tidak mengubah lisensi source code repo ini
+
 ## Summary
 
 Jika Anda membutuhkan satu repositori yang dapat:
