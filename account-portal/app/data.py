@@ -6,6 +6,7 @@ import re
 import subprocess
 import threading
 import time
+import urllib.parse
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -670,6 +671,11 @@ def _account_info_path(proto: str, username: str) -> Path:
     return account_dir / f"{username}@{proto}.txt"
 
 
+def _xray_client_config_path(proto: str, username: str) -> Path:
+    account_dir = ACCOUNT_INFO_ROOT / proto
+    return account_dir / f"{username}@{proto}.xray.json"
+
+
 def _account_info_cache_path(proto: str, username: str) -> Path:
     account_dir = ACCOUNT_INFO_ROOT / proto
     return account_dir / f"{username}@{proto}.portal.json"
@@ -901,6 +907,22 @@ def _derive_access_from_import_links(import_links: list[dict[str, str]]) -> dict
     }
 
 
+def _is_vless_xhttp3_import_link(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    url = str(item.get("url") or "").strip()
+    if not url.startswith("vless://") or "?" not in url:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    except Exception:
+        return False
+    transport = str((query.get("type") or [""])[0]).strip().lower()
+    alpn = str((query.get("alpn") or [""])[0]).strip().lower()
+    return transport == "xhttp" and "h3" in alpn
+
+
 def _parse_xray_import_links(proto: str, username: str) -> list[dict[str, str]]:
     if proto not in XRAY_PROTOCOLS:
         return []
@@ -1002,6 +1024,9 @@ def build_public_account_summary(token: str) -> dict[str, Any] | None:
     access_info = _access_summary(proto, username, account_fields, import_links)
     access_details = _access_detail_items(proto, username, account_fields)
     credentials = _portal_credentials(proto, username, account_fields)
+    xray_client_config = _xray_client_config_path(proto, username)
+    has_vless_xhttp3 = proto == "vless" and any(_is_vless_xhttp3_import_link(item) for item in import_links)
+    xray_json_available = xray_client_config.exists() and has_vless_xhttp3
 
     return {
         "ok": True,
@@ -1035,6 +1060,8 @@ def build_public_account_summary(token: str) -> dict[str, Any] | None:
         "credentials_available": credentials.get("available") == "1",
         "credentials_username": credentials.get("username", ""),
         "credentials_password": credentials.get("password", ""),
+        "xray_json_available": xray_json_available,
+        "xray_json_url": f"/account/{token}/xray.json" if xray_json_available else "",
         "portal_url": account_portal_url(token),
         "token": str(token or "").strip(),
         "import_links": import_links,

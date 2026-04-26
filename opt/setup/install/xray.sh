@@ -63,7 +63,7 @@ write_xray_config() {
 
   local I_VLESS_WS I_VMESS_WS I_TROJAN_WS
   local I_VLESS_HUP I_VMESS_HUP I_TROJAN_HUP
-  local I_VLESS_XHTTP I_VMESS_XHTTP I_TROJAN_XHTTP
+  local I_VLESS_XHTTP I_VLESS_XHTTP3 I_VMESS_XHTTP I_TROJAN_XHTTP
   local I_VLESS_GRPC I_VMESS_GRPC I_TROJAN_GRPC
 
   I_VLESS_WS="/$(rand_str 14)"
@@ -73,11 +73,21 @@ write_xray_config() {
   I_VMESS_HUP="/$(rand_str 14)"
   I_TROJAN_HUP="/$(rand_str 14)"
   I_VLESS_XHTTP="/vless-xhttp"
+  I_VLESS_XHTTP3="/vless-xhttp3"
   I_VMESS_XHTTP="/vmess-xhttp"
   I_TROJAN_XHTTP="/trojan-xhttp"
   I_VLESS_GRPC="$(rand_str 12)"
   I_VMESS_GRPC="$(rand_str 12)"
   I_TROJAN_GRPC="$(rand_str 12)"
+  local XHTTP3_SALAMANDER XHTTP3_ECH_OUTPUT XHTTP3_ECH_CONFIG XHTTP3_ECH_SERVER_KEYS
+  XHTTP3_SALAMANDER="${XRAY_XHTTP3_SALAMANDER_PASSWORD:-}"
+  if [[ -z "${XHTTP3_SALAMANDER}" ]]; then
+    XHTTP3_SALAMANDER="$(rand_str 16)"
+  fi
+  XHTTP3_ECH_OUTPUT="$(xray tls ech --serverName "${DOMAIN}" 2>/dev/null || true)"
+  XHTTP3_ECH_CONFIG="$(printf '%s\n' "${XHTTP3_ECH_OUTPUT}" | awk 'found && NF {print; exit} /^ECH config list:/ {found=1}')"
+  XHTTP3_ECH_SERVER_KEYS="$(printf '%s\n' "${XHTTP3_ECH_OUTPUT}" | awk 'found && NF {print; exit} /^ECH server keys:/ {found=1}')"
+  [[ -n "${XHTTP3_ECH_CONFIG}" && -n "${XHTTP3_ECH_SERVER_KEYS}" ]] || die "Gagal generate ECH config untuk XHTTP/3."
 
   mkdir -p "$(dirname "$XRAY_CONFIG")"
 
@@ -577,6 +587,73 @@ write_xray_config() {
       }
     },
     {
+      "listen": "::",
+      "port": 443,
+      "protocol": "vless",
+      "tag": "default@vless-xhttp3",
+      "settings": {
+        "clients": [
+          {
+            "id": "${UUID}",
+            "email": "default@vless-xhttp3"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "${DOMAIN}",
+          "alpn": [
+            "h3"
+          ],
+          "echServerKeys": "${XHTTP3_ECH_SERVER_KEYS}",
+          "echForceQuery": "full",
+          "certificates": [
+            {
+              "certificateFile": "${CERT_FULLCHAIN}",
+              "keyFile": "${CERT_PRIVKEY}"
+            }
+          ]
+        },
+        "xhttpSettings": {
+          "path": "${I_VLESS_XHTTP3}",
+          "headers": {
+            "User-Agent": "${XRAY_XHTTP3_USER_AGENT}"
+          }
+        },
+        "finalmask": {
+          "udp": [
+            {
+              "type": "salamander",
+              "settings": {
+                "password": "${XHTTP3_SALAMANDER}"
+              }
+            }
+          ],
+          "quicParams": {
+            "congestion": "${XRAY_XHTTP3_CONGESTION}",
+            "udpHop": {
+              "ports": "${XRAY_XHTTP3_UDPHOP_PORTS}",
+              "interval": "${XRAY_XHTTP3_UDPHOP_INTERVAL}"
+            },
+            "maxIdleTimeout": ${XRAY_XHTTP3_MAX_IDLE_TIMEOUT},
+            "keepAlivePeriod": ${XRAY_XHTTP3_KEEPALIVE_PERIOD},
+            "disablePathMTUDiscovery": ${XRAY_XHTTP3_DISABLE_PMTUD}
+          }
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      }
+    },
+    {
       "listen": "127.0.0.1",
       "port": ${P_VMESS_XHTTP},
       "protocol": "vmess",
@@ -814,6 +891,9 @@ EOF
   declare -gx XR_UUID="$UUID"
   declare -gx XR_TROJAN_PASS="$TROJAN_PASS"
   declare -gx XR_API_PORT="$P_API"
+  declare -gx XRAY_XHTTP3_SALAMANDER_PASSWORD="$XHTTP3_SALAMANDER"
+  declare -gx XRAY_XHTTP3_ECH_CONFIG="$XHTTP3_ECH_CONFIG"
+  declare -gx XRAY_XHTTP3_ECH_SERVER_KEYS="$XHTTP3_ECH_SERVER_KEYS"
 
   declare -gx P_VLESS_TCP="$P_VLESS_TCP"
   declare -gx P_VMESS_TCP="$P_VMESS_TCP"
@@ -838,6 +918,7 @@ EOF
   declare -gx I_VMESS_HUP="$I_VMESS_HUP"
   declare -gx I_TROJAN_HUP="$I_TROJAN_HUP"
   declare -gx I_VLESS_XHTTP="$I_VLESS_XHTTP"
+  declare -gx I_VLESS_XHTTP3="$I_VLESS_XHTTP3"
   declare -gx I_VMESS_XHTTP="$I_VMESS_XHTTP"
   declare -gx I_TROJAN_XHTTP="$I_TROJAN_XHTTP"
   declare -gx I_VLESS_GRPC="$I_VLESS_GRPC"
@@ -1167,6 +1248,31 @@ wait_for_xray_service_stable() {
   return 0
 }
 
+setup_xray_xhttp3_udphop_runtime() {
+  local iface helper_src
+  iface="$(ip route get 1.1.1.1 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
+  [[ -n "${iface}" ]] || return 0
+
+  helper_src="${SETUP_BIN_SRC_DIR:-${SCRIPT_DIR}/opt/setup/bin}/xray-xhttp3-udphop-rules.py"
+  [[ -f "${helper_src}" ]] || die "Helper UDPHop XHTTP3 tidak ditemukan: ${helper_src}"
+  install -m 0755 "${helper_src}" "${XRAY_XHTTP3_UDPHOP_BIN}"
+
+  cat > "${XRAY_XHTTP3_UDPHOP_ENV_FILE}" <<EOF
+XRAY_XHTTP3_UDPHOP_IFACE=${iface}
+XRAY_XHTTP3_UDPHOP_LISTEN_PORT=443
+XRAY_XHTTP3_UDPHOP_PORTS=${XRAY_XHTTP3_UDPHOP_PORTS}
+EOF
+  chmod 0644 "${XRAY_XHTTP3_UDPHOP_ENV_FILE}" >/dev/null 2>&1 || true
+
+  render_setup_template_or_die \
+    "systemd/xray-xhttp3-udphop.service" \
+    "/etc/systemd/system/${XRAY_XHTTP3_UDPHOP_SERVICE}" \
+    0644
+  systemctl daemon-reload
+  systemctl enable "${XRAY_XHTTP3_UDPHOP_SERVICE}" >/dev/null 2>&1 || true
+  systemctl restart "${XRAY_XHTTP3_UDPHOP_SERVICE}" >/dev/null 2>&1 || true
+}
+
 configure_xray_service_confdir() {
   ok "Atur xray.service -> -confdir ..."
 
@@ -1202,6 +1308,15 @@ configure_xray_service_confdir() {
   chown root:xray "${XRAY_CONFDIR}"/*.json >/dev/null 2>&1 || true
   chmod 640 "${XRAY_CONFDIR}"/*.json >/dev/null 2>&1 || true
 
+  if [[ -d "${CERT_DIR:-/opt/cert}" ]]; then
+    chown root:xray "${CERT_DIR:-/opt/cert}" >/dev/null 2>&1 || true
+    chmod 750 "${CERT_DIR:-/opt/cert}" >/dev/null 2>&1 || true
+  fi
+  if [[ -s "${CERT_FULLCHAIN:-/opt/cert/fullchain.pem}" && -s "${CERT_PRIVKEY:-/opt/cert/privkey.pem}" ]]; then
+    chown root:xray "${CERT_FULLCHAIN:-/opt/cert/fullchain.pem}" "${CERT_PRIVKEY:-/opt/cert/privkey.pem}" >/dev/null 2>&1 || true
+    chmod 640 "${CERT_FULLCHAIN:-/opt/cert/fullchain.pem}" "${CERT_PRIVKEY:-/opt/cert/privkey.pem}" >/dev/null 2>&1 || true
+  fi
+
   # Pastikan direktori & file log ada
   mkdir -p /var/log/xray
   touch /var/log/xray/access.log /var/log/xray/error.log
@@ -1222,6 +1337,7 @@ configure_xray_service_confdir() {
     journalctl -u xray -n 200 --no-pager >&2 || true
     die "xray gagal stabil setelah restart."
   fi
+  setup_xray_xhttp3_udphop_runtime
   ok "xray.service aktif."
 
   # Setelah Xray berjalan menggunakan conf.d, config.json tidak diperlukan lagi.

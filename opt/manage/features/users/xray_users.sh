@@ -2,6 +2,7 @@
 # shellcheck shell=bash
 
 XRAY_EDGE_RUNTIME_ENV_FILE="${XRAY_EDGE_RUNTIME_ENV_FILE:-/etc/default/edge-runtime}"
+XRAY_USERS_XHTTP3_HELPER="${XRAY_USERS_XHTTP3_HELPER:-$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/xray_users_xhttp3.py}"
 
 xray_edge_runtime_env_value() {
   local key="$1"
@@ -1595,9 +1596,9 @@ write_account_artifacts() {
   [[ -n "${account_output_override}" ]] && acc_file="${account_output_override}"
   [[ -n "${quota_output_override}" ]] && quota_file="${quota_output_override}"
 
-  python3 - <<'PY' "${acc_file}" "${quota_file}" "${XRAY_INBOUNDS_CONF}" "${domain}" "${ip}" "${isp}" "${country}" "${username}" "${proto}" "${cred}" "${quota_bytes}" "${created}" "${expired}" "${days}" "${ip_enabled}" "${ip_limit}" "${speed_enabled}" "${speed_down}" "${speed_up}" "$(xray_edge_runtime_primary_ports_label)" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_alt_tls_ports_label)" "$(xray_edge_runtime_alt_http_ports_label)"
-import sys, json, base64, urllib.parse, datetime, os, tempfile, ipaddress
-acc_file, quota_file, inbounds_file, domain, ip, isp, country, username, proto, cred, quota_bytes, created_at, expired_at, days, ip_enabled, ip_limit, speed_enabled, speed_down, speed_up, primary_ports_disp, tls_ports_disp, alt_tls_ports_disp, alt_http_ports_disp = sys.argv[1:24]
+  python3 - <<'PY' "${acc_file}" "${quota_file}" "${XRAY_INBOUNDS_CONF}" "${XRAY_USERS_XHTTP3_HELPER}" "${domain}" "${ip}" "${isp}" "${country}" "${username}" "${proto}" "${cred}" "${quota_bytes}" "${created}" "${expired}" "${days}" "${ip_enabled}" "${ip_limit}" "${speed_enabled}" "${speed_down}" "${speed_up}" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_alt_tls_ports_label)" "$(xray_edge_runtime_alt_http_ports_label)"
+import sys, json, base64, urllib.parse, datetime, os, tempfile, ipaddress, subprocess, importlib.util
+acc_file, quota_file, inbounds_file, helper_path, domain, ip, isp, country, username, proto, cred, quota_bytes, created_at, expired_at, days, ip_enabled, ip_limit, speed_enabled, speed_down, speed_up, primary_ports_disp, tls_ports_disp, alt_tls_ports_disp, alt_http_ports_disp = sys.argv[1:25]
 quota_bytes=int(quota_bytes)
 days=int(float(days)) if str(days).strip() else 0
 ip_enabled = str(ip_enabled).lower() in ("1","true","yes","y","on")
@@ -1725,6 +1726,27 @@ def write_json_atomic(path, obj):
     except Exception:
       pass
 
+spec = importlib.util.spec_from_file_location("xray_users_xhttp3", helper_path)
+helper = None
+helper_error = ""
+try:
+  if spec and spec.loader:
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+except Exception as exc:
+  helper = None
+  helper_error = str(exc)
+
+if proto == "vless" and helper is None:
+  print(f"xhttp3 helper unavailable: {helper_error or helper_path}", file=sys.stderr)
+  raise SystemExit(1)
+
+def build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto):
+  return helper.build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto) if helper is not None else None
+
+def build_vless_xhttp3_link(inbounds_path, domain, cred, username, proto):
+  return helper.build_vless_xhttp3_link(inbounds_path, domain, cred, username, proto) if helper is not None else ""
+
 def pick_portal_token(quota_file_path, current_token=""):
   import secrets
   import re
@@ -1766,7 +1788,7 @@ def pick_portal_token(quota_file_path, current_token=""):
 
 # Public endpoint harus selaras dengan nginx public path (setup.sh).
 PUBLIC_PATHS = {
-  "vless": {"ws": "/vless-ws", "httpupgrade": "/vless-hup", "xhttp": "/vless-xhttp", "grpc": "vless-grpc"},
+  "vless": {"ws": "/vless-ws", "httpupgrade": "/vless-hup", "xhttp": "/vless-xhttp", "xhttp3": "/vless-xhttp3", "grpc": "vless-grpc"},
   "vmess": {"ws": "/vmess-ws", "httpupgrade": "/vmess-hup", "xhttp": "/vmess-xhttp", "grpc": "vmess-grpc"},
   "trojan": {"ws": "/trojan-ws", "httpupgrade": "/trojan-hup", "xhttp": "/trojan-xhttp", "grpc": "trojan-grpc"},
 }
@@ -1775,9 +1797,16 @@ tcp_tls_host = domain
 
 
 def vless_link(net, val):
+  if net == "xhttp3":
+    full = build_vless_xhttp3_link(inbounds_file, domain, cred, username, proto)
+    if full:
+      return full
   q={"encryption":"none","security":"tls","type":net,"sni":domain}
-  if net in ("ws","httpupgrade","xhttp"):
+  if net in ("ws","httpupgrade","xhttp","xhttp3"):
     q["path"]=val or "/"
+  if net == "xhttp3":
+    q["type"]="xhttp"
+    q["alpn"]="h3"
   elif net=="grpc":
     if val:
       q["serviceName"]=val
@@ -1822,6 +1851,8 @@ nets = ["ws", "httpupgrade", "grpc"]
 if proto in TCP_TLS_PROTOCOLS:
   nets = ["tcp"] + nets
 nets = [net for net in nets if net != "grpc"] + ["xhttp", "grpc"]
+if proto == "vless":
+  nets = [net for net in nets if net != "grpc"] + ["xhttp3", "grpc"]
 for net in nets:
   val = public_proto.get(net, "")
   if proto=="vless":
@@ -1842,6 +1873,8 @@ hup_path = public_proto.get("httpupgrade", "") or "/"
 hup_path_alt = path_alt_placeholder(hup_path)
 xhttp_path = public_proto.get("xhttp", "") or "/"
 xhttp_path_alt = path_alt_placeholder(xhttp_path)
+xhttp3_path = public_proto.get("xhttp3", "") or "-"
+xhttp3_path_alt = path_alt_placeholder(xhttp3_path) if xhttp3_path != "-" else "-"
 grpc_service = public_proto.get("grpc", "") or "-"
 grpc_service_alt = service_alt_placeholder(grpc_service)
 created_disp = created_at[:10] if len(created_at) >= 10 and created_at[4:5] == "-" and created_at[7:8] == "-" else created_at
@@ -1859,6 +1892,8 @@ running_labels = [
   f"{proto_disp} Path Service",
   f"{proto_disp} Path Service Alt",
 ]
+if proto == "vless":
+  running_labels.append(f"{proto_disp} Path XHTTP/3")
 if proto in TCP_TLS_PROTOCOLS:
   running_labels.append(f"{proto_disp} TCP+TLS Port")
 running_label_width = max(len(label) for label in running_labels)
@@ -1902,6 +1937,8 @@ lines.append(section_line(f"{proto_disp} Path HUP", hup_path, running_label_widt
 lines.append(section_line(f"{proto_disp} Path HUP Alt", hup_path_alt, running_label_width))
 lines.append(section_line(f"{proto_disp} Path XHTTP", xhttp_path, running_label_width))
 lines.append(section_line(f"{proto_disp} Path XHTTP Alt", xhttp_path_alt, running_label_width))
+if proto == "vless":
+  lines.append(section_line(f"{proto_disp} Path XHTTP/3", xhttp3_path, running_label_width))
 lines.append(section_line(f"{proto_disp} Path Service", grpc_service, running_label_width))
 lines.append(section_line(f"{proto_disp} Path Service Alt", grpc_service_alt, running_label_width))
 lines.append("")
@@ -1916,10 +1953,19 @@ lines.append("")
 if "xhttp" in links:
   append_link_block(lines, "XHTTP", links.get('xhttp','-'))
   lines.append("")
+if "xhttp3" in links:
+  append_link_block(lines, "VLESS XHTTP/3 (UDP/QUIC)", links.get('xhttp3','-'))
+  lines.append("")
 append_link_block(lines, "gRPC", links.get('grpc','-'))
 lines.append("")
 
 write_text_atomic(acc_file, "\n".join(lines))
+
+xray_json_file = os.path.splitext(acc_file)[0] + ".xray.json"
+if proto == "vless":
+  xray_client_cfg = build_vless_xhttp3_client_config(inbounds_file, domain, cred, username, proto)
+  if xray_client_cfg:
+    write_json_atomic(xray_json_file, xray_client_cfg)
 
 # Write quota json metadata
 meta={
@@ -2000,18 +2046,20 @@ account_info_refresh_for_user() {
   [[ -n "${isp}" ]] || isp="-"
   [[ -n "${country}" ]] || country="-"
   set +e
-  python3 - <<'PY' "${acc_file}" "${quota_file}" "${XRAY_INBOUNDS_CONF}" "${domain}" "${ip}" "${isp}" "${country}" "${username}" "${proto}" "${cred_override}" "${output_file_override}" "$(xray_edge_runtime_primary_ports_label)" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_alt_tls_ports_label)" "$(xray_edge_runtime_alt_http_ports_label)"
+  python3 - <<'PY' "${acc_file}" "${quota_file}" "${XRAY_INBOUNDS_CONF}" "${XRAY_USERS_XHTTP3_HELPER}" "${domain}" "${ip}" "${isp}" "${country}" "${username}" "${proto}" "${cred_override}" "${output_file_override}" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_public_tls_ports_label)" "$(xray_edge_runtime_alt_tls_ports_label)" "$(xray_edge_runtime_alt_http_ports_label)"
 import base64
 import ipaddress
 import json
+import importlib.util
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import urllib.parse
 from datetime import date, datetime
 
-acc_file, quota_file, inbounds_file, domain_arg, ip_arg, isp_arg, country_arg, username, proto, cred_override, output_override, primary_ports_disp, tls_ports_disp, alt_tls_ports_disp, alt_http_ports_disp = sys.argv[1:16]
+acc_file, quota_file, inbounds_file, helper_path, domain_arg, ip_arg, isp_arg, country_arg, username, proto, cred_override, output_override, primary_ports_disp, tls_ports_disp, alt_tls_ports_disp, alt_http_ports_disp = sys.argv[1:17]
 email = f"{username}@{proto}"
 forced_cred = str(cred_override or "").strip()
 out_file = str(output_override or "").strip() or acc_file
@@ -2166,6 +2214,31 @@ def write_json_atomic(path, obj):
         os.remove(tmp)
     except Exception:
       pass
+
+spec = importlib.util.spec_from_file_location("xray_users_xhttp3", helper_path)
+helper = None
+helper_error = ""
+try:
+  if spec and spec.loader:
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+except Exception as exc:
+  helper = None
+  helper_error = str(exc)
+
+if proto == "vless" and helper is None:
+  print(f"xhttp3 helper unavailable: {helper_error or helper_path}", file=sys.stderr)
+  raise SystemExit(1)
+
+def load_jsonc(path):
+  with open(path, "r", encoding="utf-8") as handle:
+    return json.load(handle)
+
+def build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto):
+  return helper.build_vless_xhttp3_client_config(inbounds_path, domain, cred, username, proto) if helper is not None else None
+
+def build_vless_xhttp3_link(inbounds_path, domain, cred, username, proto):
+  return helper.build_vless_xhttp3_link(inbounds_path, domain, cred, username, proto) if helper is not None else ""
 
 
 def pick_portal_token(quota_file_path, current_token=""):
@@ -2387,7 +2460,7 @@ if not cred:
   raise SystemExit(20)
 
 PUBLIC_PATHS = {
-  "vless": {"ws": "/vless-ws", "httpupgrade": "/vless-hup", "xhttp": "/vless-xhttp", "grpc": "vless-grpc"},
+  "vless": {"ws": "/vless-ws", "httpupgrade": "/vless-hup", "xhttp": "/vless-xhttp", "xhttp3": "/vless-xhttp3", "grpc": "vless-grpc"},
   "vmess": {"ws": "/vmess-ws", "httpupgrade": "/vmess-hup", "xhttp": "/vmess-xhttp", "grpc": "vmess-grpc"},
   "trojan": {"ws": "/trojan-ws", "httpupgrade": "/trojan-hup", "xhttp": "/trojan-xhttp", "grpc": "trojan-grpc"},
 }
@@ -2396,9 +2469,16 @@ tcp_tls_host = domain
 
 
 def vless_link(net, val):
+  if net == "xhttp3":
+    full = build_vless_xhttp3_link(inbounds_file, domain, cred, username, proto)
+    if full:
+      return full
   q = {"encryption": "none", "security": "tls", "type": net, "sni": domain}
-  if net in ("ws", "httpupgrade", "xhttp"):
+  if net in ("ws", "httpupgrade", "xhttp", "xhttp3"):
     q["path"] = val or "/"
+  if net == "xhttp3":
+    q["type"] = "xhttp"
+    q["alpn"] = "h3"
   elif net == "grpc" and val:
     q["serviceName"] = val
   host = tcp_tls_host if net == "tcp" else domain
@@ -2451,6 +2531,8 @@ hup_path = public_proto.get("httpupgrade", "") or "/"
 hup_path_alt = path_alt_placeholder(hup_path)
 xhttp_path = public_proto.get("xhttp", "") or "/"
 xhttp_path_alt = path_alt_placeholder(xhttp_path)
+xhttp3_path = public_proto.get("xhttp3", "") or "-"
+xhttp3_path_alt = path_alt_placeholder(xhttp3_path) if xhttp3_path != "-" else "-"
 grpc_service = public_proto.get("grpc", "") or "-"
 grpc_service_alt = service_alt_placeholder(grpc_service)
 created_disp = created_at[:10] if len(created_at) >= 10 and created_at[4:5] == "-" and created_at[7:8] == "-" else created_at
@@ -2468,6 +2550,8 @@ running_labels = [
   f"{proto_disp} Path Service",
   f"{proto_disp} Path Service Alt",
 ]
+if proto == "vless":
+  running_labels.append(f"{proto_disp} Path XHTTP/3")
 if proto in TCP_TLS_PROTOCOLS:
   running_labels.append(f"{proto_disp} TCP+TLS Port")
 running_label_width = max(len(label) for label in running_labels)
@@ -2475,6 +2559,8 @@ nets = ["ws", "httpupgrade", "grpc"]
 if proto in TCP_TLS_PROTOCOLS:
   nets = ["tcp"] + nets
 nets = [net for net in nets if net != "grpc"] + ["xhttp", "grpc"]
+if proto == "vless":
+  nets = [net for net in nets if net != "grpc"] + ["xhttp3", "grpc"]
 for net in nets:
   val = public_proto.get(net, "")
   if proto == "vless":
@@ -2522,6 +2608,8 @@ lines.append(section_line(f"{proto_disp} Path HUP", hup_path, running_label_widt
 lines.append(section_line(f"{proto_disp} Path HUP Alt", hup_path_alt, running_label_width))
 lines.append(section_line(f"{proto_disp} Path XHTTP", xhttp_path, running_label_width))
 lines.append(section_line(f"{proto_disp} Path XHTTP Alt", xhttp_path_alt, running_label_width))
+if proto == "vless":
+  lines.append(section_line(f"{proto_disp} Path XHTTP/3", xhttp3_path, running_label_width))
 lines.append(section_line(f"{proto_disp} Path Service", grpc_service, running_label_width))
 lines.append(section_line(f"{proto_disp} Path Service Alt", grpc_service_alt, running_label_width))
 lines.append("")
@@ -2535,6 +2623,9 @@ append_link_block(lines, "HTTPUpgrade", links.get('httpupgrade', '-'))
 lines.append("")
 if "xhttp" in links:
   append_link_block(lines, "XHTTP", links.get('xhttp', '-'))
+  lines.append("")
+if "xhttp3" in links:
+  append_link_block(lines, "VLESS XHTTP/3 (UDP/QUIC)", links.get('xhttp3', '-'))
   lines.append("")
 append_link_block(lines, "gRPC", links.get('grpc', '-'))
 lines.append("")
@@ -2553,6 +2644,12 @@ finally:
       os.remove(tmp)
   except Exception:
     pass
+
+xray_json_file = os.path.splitext(acc_file)[0] + ".xray.json"
+if proto == "vless":
+  xray_client_cfg = build_vless_xhttp3_client_config(inbounds_file, domain, cred, username, proto)
+  if xray_client_cfg:
+    write_json_atomic(xray_json_file, xray_client_cfg)
 if meta_dirty and quota_file:
   write_json_atomic(quota_file, meta)
 PY
@@ -3518,6 +3615,10 @@ PY
   USER_ADD_ABORT_INBOUNDS_CREATED="1"
   mutation_txn_field_write "${add_txn_dir}" runtime_created "1" >/dev/null 2>&1 || true
   rm -rf "${stage_dir}" >/dev/null 2>&1 || true
+
+  if ! account_info_refresh_for_user "${proto}" "${username}" "" "" "${cred}" >/dev/null 2>&1; then
+    warn "XRAY ACCOUNT INFO live untuk ${username}@${proto} belum sepenuhnya sinkron setelah add user."
+  fi
 
   if [[ "${speed_enabled}" == "true" ]]; then
     log "Speed policy aktif untuk ${username}@${proto} (mark=${speed_mark}, down=${speed_down_mbit}Mbps, up=${speed_up_mbit}Mbps)"
