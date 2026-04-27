@@ -3115,15 +3115,19 @@ delete_account_artifacts() {
   local proto="$1"
   local username="$2"
 
-  local acc_file acc_file_compatfmt quota_file quota_file_compatfmt portal_file
+  local acc_file acc_file_compatfmt quota_file quota_file_compatfmt portal_file xray_json_file xray_json_file_compatfmt
   acc_file="${ACCOUNT_ROOT}/${proto}/${username}@${proto}.txt"
   acc_file_compatfmt="${ACCOUNT_ROOT}/${proto}/${username}.txt"
   quota_file="${QUOTA_ROOT}/${proto}/${username}@${proto}.json"
   quota_file_compatfmt="${QUOTA_ROOT}/${proto}/${username}.json"
   portal_file="${ACCOUNT_ROOT}/${proto}/${username}@${proto}.portal.json"
+  xray_json_file="${ACCOUNT_ROOT}/${proto}/${username}@${proto}.xray.json"
+  xray_json_file_compatfmt="${ACCOUNT_ROOT}/${proto}/${username}.xray.json"
 
   delete_one_file "${acc_file}"
   delete_one_file "${acc_file_compatfmt}"
+  delete_one_file "${xray_json_file}"
+  delete_one_file "${xray_json_file_compatfmt}"
   delete_one_file "${quota_file}"
   delete_one_file "${quota_file}.lock"
   delete_one_file "${quota_file_compatfmt}"
@@ -3141,6 +3145,8 @@ delete_account_artifacts_checked() {
   for p in \
     "${ACCOUNT_ROOT}/${proto}/${username}@${proto}.txt" \
     "${ACCOUNT_ROOT}/${proto}/${username}.txt" \
+    "${ACCOUNT_ROOT}/${proto}/${username}@${proto}.xray.json" \
+    "${ACCOUNT_ROOT}/${proto}/${username}.xray.json" \
     "${QUOTA_ROOT}/${proto}/${username}@${proto}.json" \
     "${QUOTA_ROOT}/${proto}/${username}@${proto}.json.lock" \
     "${QUOTA_ROOT}/${proto}/${username}.json" \
