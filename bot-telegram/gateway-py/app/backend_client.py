@@ -26,7 +26,6 @@ ACTION_TIMEOUTS_SECONDS: dict[str, float] = {
     "37:dns_for_ssh_apply": 180.0,
     "40:warp_ssh_global_enable": 180.0,
     "40:warp_ssh_global_disable": 180.0,
-    "41:routing_ssh_apply": 180.0,
     "22:add_user": 90.0,
     "22:delete_user": 90.0,
     "22:reset_credential": 90.0,

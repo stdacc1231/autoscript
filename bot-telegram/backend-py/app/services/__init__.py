@@ -21,7 +21,6 @@ MENU_HANDLERS = {
     "34": menu_6_ssh_network.handle,
     "37": menu_6_ssh_network.handle,
     "40": menu_6_ssh_network.handle,
-    "41": menu_6_ssh_network.handle,
     "46": menu_10_backup.handle,
     "47": menu_10_backup.handle,
     "48": menu_10_backup.handle,

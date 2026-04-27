@@ -59,7 +59,7 @@
     {
       "id": "5",
       "label": "Xray Network",
-      "description": "Kontrol jaringan Xray: WARP, DNS, dan routing runtime.",
+      "description": "Kontrol cepat jaringan Xray: WARP, DNS, dan runtime ringan.",
       "actions": [
         {
           "id": "open_xray_network",
@@ -73,7 +73,7 @@
     {
       "id": "6",
       "label": "SSH Network",
-      "description": "Kontrol DNS for SSH dan WARP SSH mengikuti susunan CLI.",
+      "description": "Kontrol cepat DNS for SSH dan WARP SSH Global.",
       "actions": [
         {
           "id": "open_ssh_network",
@@ -1143,7 +1143,7 @@
     {
       "id": "33",
       "label": "Xray Network",
-      "description": "WARP, DNS, dan routing runtime Xray yang mengikuti domain menu CLI.",
+      "description": "Quick controls WARP dan DNS untuk Xray.",
       "hidden": true,
       "parent_menu": "5",
       "actions": [
@@ -1175,91 +1175,6 @@
                 "style": "short",
                 "required": true,
                 "placeholder": "direct / warp"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "set_warp_user_mode",
-          "label": "Set WARP Per User",
-          "mode": "modal",
-          "style": "secondary",
-          "modal": {
-            "title": "Set WARP Per User",
-            "fields": [
-              {
-                "id": "proto",
-                "label": "Protocol",
-                "style": "short",
-                "required": true,
-                "placeholder": "vless/vmess/trojan"
-              },
-              {
-                "id": "username",
-                "label": "Username",
-                "style": "short",
-                "required": true,
-                "placeholder": "alice"
-              },
-              {
-                "id": "mode",
-                "label": "Mode",
-                "style": "short",
-                "required": true,
-                "placeholder": "direct / warp / off"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "set_warp_inbound_mode",
-          "label": "Set WARP Inbound",
-          "mode": "modal",
-          "style": "secondary",
-          "modal": {
-            "title": "Set WARP Per Inbound",
-            "fields": [
-              {
-                "id": "inbound_tag",
-                "label": "Inbound Tag",
-                "style": "short",
-                "required": true,
-                "placeholder": "contoh: vless-ws-tls"
-              },
-              {
-                "id": "mode",
-                "label": "Mode",
-                "style": "short",
-                "required": true,
-                "placeholder": "direct / warp / off"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "set_warp_domain_mode",
-          "label": "Set WARP Domain",
-          "mode": "modal",
-          "style": "secondary",
-          "modal": {
-            "title": "Set WARP Per Domain",
-            "fields": [
-              {
-                "id": "mode",
-                "label": "Mode",
-                "style": "short",
-                "required": true,
-                "placeholder": "direct / warp / off"
-              },
-              {
-                "id": "entry",
-                "label": "Domain/Geosite",
-                "style": "short",
-                "required": true,
-                "placeholder": "contoh: domain:openai.com"
               }
             ]
           },
@@ -1335,19 +1250,13 @@
           "style": "secondary",
           "confirm": true,
           "dangerous": true
-        },
-        {
-          "id": "state_file",
-          "label": "View State File",
-          "mode": "direct",
-          "style": "secondary"
         }
       ]
     },
     {
       "id": "34",
       "label": "SSH Network",
-      "description": "Menu SSH Network disederhanakan menjadi DNS for SSH dan WARP SSH.",
+      "description": "Quick controls DNS for SSH dan WARP SSH Global.",
       "hidden": true,
       "parent_menu": "6",
       "actions": [
@@ -1364,13 +1273,6 @@
           "mode": "menu",
           "style": "secondary",
           "target_menu": "40"
-        },
-        {
-          "id": "open_ssh_network_warp_user",
-          "label": "WARP SSH Per-User",
-          "mode": "menu",
-          "style": "secondary",
-          "target_menu": "41"
         }
       ]
     },
@@ -1479,89 +1381,6 @@
           "label": "Disable WARP Global",
           "mode": "direct",
           "style": "danger",
-          "confirm": true,
-          "dangerous": true
-        }
-      ]
-    },
-    {
-      "id": "41",
-      "label": "WARP SSH Per-User",
-      "description": "Kontrol WARP SSH per-user via metadata route_mode SSH.",
-      "hidden": true,
-      "parent_menu": "34",
-      "actions": [
-        {
-          "id": "warp_ssh_per_user_status",
-          "label": "Show Status",
-          "mode": "direct",
-          "style": "primary"
-        },
-        {
-          "id": "warp_ssh_user_enable",
-          "label": "Enable WARP for User",
-          "mode": "modal",
-          "style": "secondary",
-          "confirm": true,
-          "modal": {
-            "title": "Enable WARP SSH for User",
-            "fields": [
-              {
-                "id": "username",
-                "label": "Username SSH",
-                "style": "short",
-                "required": true,
-                "placeholder": "Pilih via tombol"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "warp_ssh_user_disable",
-          "label": "Disable WARP for User",
-          "mode": "modal",
-          "style": "secondary",
-          "confirm": true,
-          "modal": {
-            "title": "Disable WARP SSH for User",
-            "fields": [
-              {
-                "id": "username",
-                "label": "Username SSH",
-                "style": "short",
-                "required": true,
-                "placeholder": "Pilih via tombol"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "warp_ssh_user_inherit",
-          "label": "Reset User to Inherit",
-          "mode": "modal",
-          "style": "secondary",
-          "confirm": true,
-          "modal": {
-            "title": "Reset WARP SSH User to Inherit",
-            "fields": [
-              {
-                "id": "username",
-                "label": "Username SSH",
-                "style": "short",
-                "required": true,
-                "placeholder": "Pilih via tombol"
-              }
-            ]
-          },
-          "dangerous": true
-        },
-        {
-          "id": "routing_ssh_apply",
-          "label": "Apply WARP Runtime",
-          "mode": "direct",
-          "style": "secondary",
           "confirm": true,
           "dangerous": true
         }

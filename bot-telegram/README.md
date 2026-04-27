@@ -6,7 +6,7 @@ Bot Telegram ini adalah pelengkap CLI `manage.sh`, berjalan standalone di `/opt/
 - Panel Telegram untuk action yang setara menu operasional `manage.sh`.
 - Tidak menjalankan `manage.sh` secara langsung dari bot.
 - Menggunakan backend API lokal (`backend-py`) + gateway Telegram (`gateway-py`).
-- Fokus parity saat ini mencakup area `Accounts`, `QAC`, `Network`, dan `Backup/Restore`.
+- Fokus parity saat ini mencakup area `Accounts`, `QAC`, `Network` quick controls, dan `Backup/Restore`.
 
 ## Struktur
 - `backend-py/`: FastAPI service action menu operasional Telegram.
@@ -47,11 +47,12 @@ Menu bot Telegram sekarang mengikuti urutan `CLI Menu` di `manage.sh` untuk top-
 
 Catatan parity:
 - Domain `SSH Network` sudah muncul sebagai menu tersendiri agar susunan bot konsisten dengan CLI.
-- `SSH Network` sekarang disederhanakan menjadi `DNS for SSH`, `WARP SSH Global`, dan `WARP SSH Per-User`.
+- `Xray Network` di bot dibatasi ke quick controls: status WARP, restart WARP, WARP global, ringkasan DNS, dan perubahan DNS ringan.
+- `SSH Network` di bot dibatasi ke `DNS for SSH` dan `WARP SSH Global`.
 
 Catatan perilaku:
 - Callback stale untuk action sensitif tetap ditolak aman oleh gateway.
-- `WARP SSH Per-User` tetap memakai state metadata SSH yang sama (`network.route_mode`) seperti di CLI.
+- Kontrol network yang lebih dalam seperti WARP per-user/per-inbound/per-domain dan WARP SSH per-user tetap dikerjakan dari `manage` CLI.
 
 ## Backup/Restore
 Fitur `Backup/Restore` dipakai untuk membuat arsip backup lokal, melihat daftar backup, restore backup lokal terbaru, dan restore dari upload `.tar.gz`. Pada struktur baru, fitur ini diakses langsung dari top-level `15) Backup/Restore`.

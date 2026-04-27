@@ -24,9 +24,7 @@ from telegram.ext import (
 
 from .backend_client import (
     BackendClient,
-    BackendDomainOption,
     BackendError,
-    BackendInboundOption,
     BackendRootDomainOption,
     BackendUserOption,
 )
@@ -119,7 +117,7 @@ SSH_USER_MENU_ID = "23"
 XRAY_QAC_MENU_ID = "24"
 SSH_QAC_MENU_ID = "25"
 BACKUP_MENU_ID = "32"
-SSH_NETWORK_MENU_IDS = {"34", "37", "40", "41"}
+SSH_NETWORK_MENU_IDS = {"34", "37", "40"}
 DELETE_PICK_MENU_IDS = {XRAY_USER_MENU_ID, SSH_USER_MENU_ID}
 QAC_MENU_IDS = {XRAY_QAC_MENU_ID, SSH_QAC_MENU_ID}
 ACCOUNT_PICK_ACTION_IDS = {"account_info", "delete_user", "extend_expiry", "reset_password", "reset_credential"}
@@ -150,13 +148,6 @@ FORM_CHOICE_USERNAME_ACTIONS = {
     "set_speed_download",
     "set_speed_upload",
     "speed_limit",
-    "set_warp_user_mode",
-    "routing_ssh_user_inherit",
-    "routing_ssh_user_direct",
-    "routing_ssh_user_warp",
-    "warp_ssh_user_enable",
-    "warp_ssh_user_disable",
-    "warp_ssh_user_inherit",
 }
 SSH_ONLY_PROTOCOL_ACTIONS = {
     "reset_password",
@@ -1299,8 +1290,6 @@ async def _resolve_form_choice_options(runtime: Runtime, pending: dict, field_id
             return [("Extend (+hari)", "extend"), ("Set Tanggal", "set")]
         if action_id == "set_warp_global_mode":
             return [("Direct", "direct"), ("Warp", "warp")]
-        if action_id in {"set_warp_user_mode", "set_warp_inbound_mode", "set_warp_domain_mode"}:
-            return [("Direct", "direct"), ("Warp", "warp"), ("Off (inherit)", "off")]
 
     if field_id == "strategy":
         if action_id == "set_dns_query_strategy":
@@ -1358,24 +1347,6 @@ async def _resolve_form_choice_options(runtime: Runtime, pending: dict, field_id
             return []
         usernames = list(dict.fromkeys([o.username for o in options if o.proto == proto and o.username]))
         return [(u, u) for u in usernames]
-
-    if field_id == "inbound_tag" and action_id == "set_warp_inbound_mode":
-        try:
-            options: list[BackendInboundOption] = await runtime.backend.list_inbound_options()
-        except BackendError:
-            return []
-        tags = list(dict.fromkeys([o.tag for o in options if o.tag]))
-        return [(tag, tag) for tag in tags]
-
-    if field_id == "entry" and action_id == "set_warp_domain_mode":
-        mode = str(params.get("mode") or "").strip().lower()
-        mode_q = mode if mode in {"direct", "warp"} else None
-        try:
-            options: list[BackendDomainOption] = await runtime.backend.list_warp_domain_options(mode=mode_q)
-        except BackendError:
-            return []
-        entries = list(dict.fromkeys([o.entry for o in options if o.entry]))
-        return [(ent, ent) for ent in entries]
 
     if field_id == "domain" and action_id == "delete_adblock_domain":
         try:
