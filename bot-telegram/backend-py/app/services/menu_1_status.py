@@ -1,6 +1,7 @@
 from ..adapters import system
-from . import menu_8_maintenance
 from ..utils.response import error_response, ok_response
+
+
 def handle(action: str, params: dict, settings) -> dict:
     if action == "overview":
         title, msg = system.op_status_overview()
@@ -15,5 +16,4 @@ def handle(action: str, params: dict, settings) -> dict:
         if ok:
             return ok_response(title, msg)
         return error_response("tls_info_failed", title, msg)
-    # Menu 11 also hosts former maintenance actions.
-    return menu_8_maintenance.handle(action, params, settings)
+    return error_response("unknown_action", "Status", f"Action tidak dikenal: {action}")

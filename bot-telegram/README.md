@@ -6,7 +6,7 @@ Bot Telegram ini adalah pelengkap CLI `manage.sh`, berjalan standalone di `/opt/
 - Panel Telegram untuk action yang setara menu operasional `manage.sh`.
 - Tidak menjalankan `manage.sh` secara langsung dari bot.
 - Menggunakan backend API lokal (`backend-py`) + gateway Telegram (`gateway-py`).
-- Fokus parity saat ini mencakup area `Accounts`, `QAC`, `Status`, `Domain`, `Network`, dan `Ops`.
+- Fokus parity saat ini mencakup area `Accounts`, `QAC`, `Network`, dan `Backup/Restore`.
 
 ## Struktur
 - `backend-py/`: FastAPI service action menu operasional Telegram.
@@ -43,29 +43,18 @@ Menu bot Telegram sekarang mengikuti urutan `CLI Menu` di `manage.sh` untuk top-
 - `4) SSH QAC`
 - `5) Xray Network`
 - `6) SSH Network`
-- `7) Adblocker`
-- `8) Domain Control`
-- `9) Speedtest`
-- `10) Security`
-- `11) Maintenance`
-- `12) Traffic`
-- `13) WARP Tier`
+- `15) Backup/Restore`
 
 Catatan parity:
-- `13) Tools` sengaja tidak dibawa ke bot Telegram; untuk bot, slot itu dipakai `WARP Tier`.
 - Domain `SSH Network` sudah muncul sebagai menu tersendiri agar susunan bot konsisten dengan CLI.
 - `SSH Network` sekarang disederhanakan menjadi `DNS for SSH`, `WARP SSH Global`, dan `WARP SSH Per-User`.
-- `WARP Tier` sekarang dibagi jadi root `Show Overall Status`, submenu `Free/Plus`, dan submenu `Zero Trust`.
 
 Catatan perilaku:
 - Callback stale untuk action sensitif tetap ditolak aman oleh gateway.
-- `Xray Network`, `Adblocker`, dan `WARP Tier` dipisah supaya domain action-nya lebih jelas seperti di CLI.
-- `Maintenance`, `Traffic`, dan `Speedtest` juga tampil sebagai domain utama tersendiri, bukan lagi digabung di `Ops`.
-- `Domain Control` dan `Security` tetap mempertahankan action sensitif yang sama, tetapi mengikuti penamaan dan urutan CLI.
 - `WARP SSH Per-User` tetap memakai state metadata SSH yang sama (`network.route_mode`) seperti di CLI.
 
 ## Backup/Restore
-Fitur `Backup/Restore` dipakai untuk membuat arsip backup lokal, melihat daftar backup, restore backup lokal terbaru, dan restore dari upload `.tar.gz`. Pada struktur baru, fitur ini diakses lewat kategori `Ops`.
+Fitur `Backup/Restore` dipakai untuk membuat arsip backup lokal, melihat daftar backup, restore backup lokal terbaru, dan restore dari upload `.tar.gz`. Pada struktur baru, fitur ini diakses langsung dari top-level `15) Backup/Restore`.
 
 Scope file yang dibackup:
 - `/usr/local/etc/xray/conf.d` (seluruh file konfigurasi Xray)
