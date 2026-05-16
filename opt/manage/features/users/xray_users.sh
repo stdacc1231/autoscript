@@ -228,9 +228,9 @@ xray_write_routing_locked() {
 
 xray_txn_changed_flag() {
   # args: output_blob -> prints 1 or 0
-  local out="${1:-}"
+  local output_blob="${1:-}"
   local changed
-  changed="$(printf '%s\n' "${out}" | awk -F'=' '/^changed=/{print $2; exit}')"
+  changed="$(printf '%s\n' "${output_blob}" | awk -F'=' '/^changed=/{print $2; exit}')"
   if [[ "${changed}" == "1" ]]; then
     echo "1"
   else
@@ -3064,8 +3064,7 @@ domain_control_refresh_account_info_batches_run() {
   local ip="${2:-}"
   local scope="${3:-all}"
   local batch_limit="${4:-10}"
-  local summary="" xray_count=0 ssh_count=0 total_count=0
-  local xray_preview="" ssh_preview=""
+  local summary="" total_count=0
   local offset=0
 
   [[ "${batch_limit}" =~ ^[0-9]+$ ]] || batch_limit=10
@@ -3074,7 +3073,7 @@ domain_control_refresh_account_info_batches_run() {
   fi
 
   summary="$(account_info_refresh_targets_summary "${scope}" 1)"
-  IFS='|' read -r xray_count ssh_count total_count xray_preview ssh_preview <<<"${summary}"
+  IFS='|' read -r _xray_count _ssh_count total_count _xray_preview _ssh_preview <<<"${summary}"
   [[ "${total_count}" =~ ^[0-9]+$ ]] || total_count=0
   if (( total_count == 0 )); then
     return 0
@@ -3703,7 +3702,7 @@ PY
 xray_add_txn_recover_dir() {
   local txn_dir="${1:-}"
   local proto="" username="" cred="" runtime_created="" live_account_file="" live_quota_file=""
-  local current_cred="" notes=""
+  local current_cred="" recovery_notes=""
   [[ -n "${txn_dir}" && -d "${txn_dir}" ]] || return 0
 
   proto="$(mutation_txn_field_read "${txn_dir}" proto 2>/dev/null || true)"
@@ -3742,17 +3741,17 @@ xray_add_txn_recover_dir() {
     return 1
   fi
   if [[ -f "${txn_dir}/account.new.txt" && -n "${live_account_file}" ]]; then
-    account_info_restore_file_locked "${txn_dir}/account.new.txt" "${live_account_file}" >/dev/null 2>&1 || notes="commit account info gagal"
+    account_info_restore_file_locked "${txn_dir}/account.new.txt" "${live_account_file}" >/dev/null 2>&1 || recovery_notes="commit account info gagal"
   fi
-  if [[ -z "${notes}" && -f "${txn_dir}/quota.new.json" && -n "${live_quota_file}" ]]; then
-    quota_restore_file_locked "${txn_dir}/quota.new.json" "${live_quota_file}" >/dev/null 2>&1 || notes="commit quota gagal"
+  if [[ -z "${recovery_notes}" && -f "${txn_dir}/quota.new.json" && -n "${live_quota_file}" ]]; then
+    quota_restore_file_locked "${txn_dir}/quota.new.json" "${live_quota_file}" >/dev/null 2>&1 || recovery_notes="commit quota gagal"
   fi
-  if [[ -z "${notes}" ]]; then
+  if [[ -z "${recovery_notes}" ]]; then
     mutation_txn_dir_remove "${txn_dir}"
     log "Recovery transaksi add Xray selesai untuk ${username}@${proto}."
     return 0
   fi
-  warn "Recovery transaksi add Xray untuk ${username}@${proto} belum bersih: ${notes}"
+  warn "Recovery transaksi add Xray untuk ${username}@${proto} belum bersih: ${recovery_notes}"
   return 1
 }
 
@@ -3771,7 +3770,7 @@ xray_add_txn_recover_pending_all() {
 
 xray_delete_txn_recover_dir() {
   local txn_dir="${1:-}"
-  local proto username deleted_flag previous_cred current_cred notes=""
+  local proto username deleted_flag previous_cred current_cred delete_recovery_notes=""
   [[ -n "${txn_dir}" && -d "${txn_dir}" ]] || return 0
 
   proto="$(mutation_txn_field_read "${txn_dir}" proto 2>/dev/null || true)"
@@ -3811,24 +3810,24 @@ xray_delete_txn_recover_dir() {
       warn "Recovery transaksi delete Xray untuk ${username}@${proto} ditahan: credential live sudah berubah sejak jurnal dibuat."
       return 1
     fi
-    xray_delete_client_try "${proto}" "${username}" || notes="hapus client runtime ulang gagal"
+    xray_delete_client_try "${proto}" "${username}" || delete_recovery_notes="hapus client runtime ulang gagal"
   fi
-  if [[ -z "${notes}" ]] && ! delete_account_artifacts_checked "${proto}" "${username}"; then
-    notes="cleanup artefak lokal gagal"
+  if [[ -z "${delete_recovery_notes}" ]] && ! delete_account_artifacts_checked "${proto}" "${username}"; then
+    delete_recovery_notes="cleanup artefak lokal gagal"
   fi
-  if [[ -z "${notes}" ]] && ! speed_policy_sync_xray_try; then
-    notes="sinkronisasi speed policy gagal"
-  elif [[ -z "${notes}" ]] && ! speed_policy_apply_now >/dev/null 2>&1; then
-    notes="apply runtime speed policy gagal"
+  if [[ -z "${delete_recovery_notes}" ]] && ! speed_policy_sync_xray_try; then
+    delete_recovery_notes="sinkronisasi speed policy gagal"
+  elif [[ -z "${delete_recovery_notes}" ]] && ! speed_policy_apply_now >/dev/null 2>&1; then
+    delete_recovery_notes="apply runtime speed policy gagal"
   fi
 
-  if [[ -z "${notes}" ]]; then
+  if [[ -z "${delete_recovery_notes}" ]]; then
     log "Recovery transaksi delete Xray selesai untuk ${username}@${proto}."
     mutation_txn_dir_remove "${txn_dir}"
     return 0
   fi
 
-  warn "Recovery transaksi delete Xray untuk ${username}@${proto} belum bersih: ${notes}"
+  warn "Recovery transaksi delete Xray untuk ${username}@${proto} belum bersih: ${delete_recovery_notes}"
   return 1
 }
 
@@ -5372,6 +5371,7 @@ user_list_menu() {
 
 user_menu() {
   local pending_count=0
+  # shellcheck disable=SC2034 # ui_menu_render_options reads this nameref by variable name.
   local -a items=(
     "1|Add User"
     "2|Delete User"
@@ -5441,9 +5441,15 @@ user_menu() {
 # - Sumber metadata: /opt/quota/(vless|vmess|trojan)/*.json
 # - Perubahan JSON menggunakan atomic write (tmp + replace) untuk menghindari file korup
 # -------------------------
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_FILES=()
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_FILE_PROTOS=()
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_PAGE_SIZE=10
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_PAGE=0
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_QUERY=""
+# shellcheck disable=SC2034 # State globals are consumed by menu helpers via dynamic names.
 QUOTA_VIEW_INDEXES=()

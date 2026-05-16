@@ -1368,7 +1368,7 @@ ssh_account_info_write() {
   ssh_state_dirs_prepare
   password_out="${password_raw:-"-"}"
 
-  local acc_file domain ip geo_ip isp country quota_limit_disp expired_disp valid_until created_disp ip_disp speed_disp sshws_path sshws_alt_path sshws_main_disp sshws_ports_disp ssh_direct_ports_disp ssh_ssl_tls_ports_disp ssh_alt_tls_ports_disp ssh_alt_http_ports_disp badvpn_port_disp geo ssh_primary_ports_disp portal_ssh_link
+  local acc_file domain ip geo_ip isp country quota_limit_disp expired_disp valid_until created_disp ip_disp speed_disp sshws_path sshws_alt_path sshws_main_disp sshws_ports_disp ssh_direct_ports_disp ssh_ssl_tls_ports_disp ssh_alt_tls_ports_disp ssh_alt_http_ports_disp badvpn_port_disp geo portal_ssh_link
   local running_label_width running_ssh_ws_path running_ssh_ws_alt running_ssh_ws_port running_ssh_direct running_ssh_ssl_tls running_ssh_alt_tls running_ssh_alt_http running_badvpn
   local -a account_info_labels
   acc_file="$(ssh_account_info_file "${username}")"
@@ -1483,7 +1483,6 @@ PY
   fi
   portal_ssh_link="$(ssh_account_portal_link "${username}")"
   [[ -n "${portal_ssh_link}" ]] || portal_ssh_link="-"
-  ssh_primary_ports_disp="$(ssh_primary_public_ports_label)"
   sshws_ports_disp="$(ssh_primary_public_ports_label)"
   ssh_direct_ports_disp="$(ssh_primary_public_ports_label)"
   ssh_ssl_tls_ports_disp="$(ssh_primary_public_ports_label)"
@@ -1869,8 +1868,7 @@ ssh_pick_managed_user() {
   done < <(ssh_collect_candidate_users false)
 
   if (( ${#users[@]} > 1 )); then
-    IFS=$'\n' users=($(printf '%s\n' "${users[@]}" | sort -u))
-    unset IFS
+    mapfile -t users < <(printf '%s\n' "${users[@]}" | sort -u)
   fi
 
   if (( ${#users[@]} == 0 )); then
@@ -1912,7 +1910,12 @@ ssh_read_password_confirm() {
     silent_flag=""
   fi
 
-  if ! read -r ${silent_flag} -p "Password SSH: " p1; then
+  if [[ -n "${silent_flag}" ]]; then
+    if ! read -r -s -p "Password SSH: " p1; then
+      echo
+      return 1
+    fi
+  elif ! read -r -p "Password SSH: " p1; then
     echo
     return 1
   fi
@@ -1921,7 +1924,12 @@ ssh_read_password_confirm() {
     warn "Password minimal 6 karakter."
     return 1
   fi
-  if ! read -r ${silent_flag} -p "Ulangi password: " p2; then
+  if [[ -n "${silent_flag}" ]]; then
+    if ! read -r -s -p "Ulangi password: " p2; then
+      echo
+      return 1
+    fi
+  elif ! read -r -p "Ulangi password: " p2; then
     echo
     return 1
   fi

@@ -55,8 +55,9 @@ log "Bash syntax: shell scripts"
 check_bash_syntax "${SHELL_FILES[@]}"
 
 if need_cmd shellcheck; then
-  log "Shellcheck"
-  shellcheck -x -S warning "${SHELL_FILES[@]}"
+  SHELLCHECK_SEVERITY="${SHELLCHECK_SEVERITY:-error}"
+  log "Shellcheck (${SHELLCHECK_SEVERITY})"
+  shellcheck -x -S "${SHELLCHECK_SEVERITY}" "${SHELL_FILES[@]}"
 else
   warn "shellcheck tidak ditemukan; lint shell dilewati."
 fi

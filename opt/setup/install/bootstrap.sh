@@ -182,6 +182,11 @@ install_extra_deps() {
   ensure_dpkg_consistent
   apt_get_with_lock_retry install -y jq fail2ban chrony tar expect logrotate nftables dropbear dnsmasq-base wireguard-tools easy-rsa rclone python3-venv
 
+  # Mask system dropbear to prevent port 22 conflict — autoscript uses sshws-dropbear on internal port
+  systemctl stop dropbear.service 2>/dev/null || true
+  systemctl mask dropbear.service 2>/dev/null || true
+  systemctl reset-failed dropbear.service 2>/dev/null || true
+
   if command -v stunnel4 >/dev/null 2>&1 || command -v stunnel >/dev/null 2>&1; then
     ok "Dependency tambahan terpasang (jq, fail2ban, chrony, expect, logrotate, nftables, dropbear, dnsmasq-base, easy-rsa, rclone; stunnel sudah tersedia)."
   elif apt_get_with_lock_retry install -y stunnel4 >/dev/null 2>&1 || apt_get_with_lock_retry install -y stunnel >/dev/null 2>&1; then

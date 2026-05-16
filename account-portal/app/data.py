@@ -4,6 +4,7 @@ import ipaddress
 import json
 import re
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -11,15 +12,20 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-QUOTA_ROOT = Path("/opt/quota")
-ACCOUNT_INFO_ROOT = Path("/opt/account")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bot-telegram" / "shared"))
+try:
+    from constants import QUOTA_ROOT, ACCOUNT_INFO_ROOT, XRAY_PROTOCOLS, SSH_PROTOCOL  # noqa: E402
+except ModuleNotFoundError:
+    QUOTA_ROOT = Path("/opt/quota")
+    ACCOUNT_INFO_ROOT = Path("/opt/account")
+    XRAY_PROTOCOLS = ("vless", "vmess", "trojan")
+    SSH_PROTOCOL = "ssh"
+
 SSHWS_RUNTIME_SESSION_DIR = Path("/run/autoscript/sshws-sessions")
 SSHWS_CONTROL_BIN = Path("/usr/local/bin/sshws-control")
 XRAY_ACCESS_LOG = Path("/var/log/xray/access.log")
 NGINX_CONF = Path("/etc/nginx/conf.d/xray.conf")
 
-XRAY_PROTOCOLS = ("vless", "vmess", "trojan")
-SSH_PROTOCOL = "ssh"
 QAC_PROTOCOLS = XRAY_PROTOCOLS + (SSH_PROTOCOL,)
 
 PORTAL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{10,64}$")

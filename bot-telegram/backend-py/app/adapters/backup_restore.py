@@ -72,6 +72,12 @@ RESTORE_ALLOWED_FILES = (
     Path("/opt/cert/privkey.pem"),
 )
 
+RESTORE_SENSITIVE_FILE_MODES = {
+    Path("/opt/cert/privkey.pem"): 0o600,
+}
+RESTORE_MAX_FILE_MODE = 0o640
+RESTORE_MAX_DIR_MODE = 0o750
+
 VALIDATION_COMMANDS = (
     ["xray", "run", "-test", "-confdir", "/usr/local/etc/xray/conf.d"],
     ["nginx", "-t"],
@@ -109,6 +115,21 @@ def _gateway_identity() -> tuple[int, int] | None:
     except Exception:
         return None
     return int(entry.pw_uid), int(entry.pw_gid)
+
+
+def _clamp_restore_mode(path: Path, mode: int, *, is_dir: bool) -> int:
+    sensitive_mode = RESTORE_SENSITIVE_FILE_MODES.get(path)
+    if sensitive_mode is not None:
+        return sensitive_mode
+
+    max_mode = RESTORE_MAX_DIR_MODE if is_dir else RESTORE_MAX_FILE_MODE
+    return int(mode) & max_mode
+
+
+def _clamp_restore_identity(uid: int, gid: int) -> tuple[int, int]:
+    if uid < 0 or gid < 0:
+        return 0, 0
+    return uid, gid
 
 
 def _set_path_owner_mode(path: Path, *, uid: int | None = None, gid: int | None = None, mode: int | None = None) -> None:
@@ -721,6 +742,8 @@ def _write_stream_atomic(
         gid = restore_gid
     if isinstance(restore_mode, int) and restore_mode > 0:
         mode = restore_mode
+    uid, gid = _clamp_restore_identity(uid, gid)
+    mode = _clamp_restore_mode(path, mode, is_dir=False)
 
     fd = -1
     tmp_path = ""
@@ -825,6 +848,8 @@ def _apply_directory_metadata(directories: list[dict[str, Any]]) -> tuple[bool, 
             mode = int(item["mode"]) if "mode" in item else int(st.st_mode & 0o777)
         except Exception as exc:
             return False, f"Gagal membaca metadata direktori restore {path}: {exc}"
+        uid, gid = _clamp_restore_identity(uid, gid)
+        mode = _clamp_restore_mode(path, mode, is_dir=True)
         ok_meta, msg_meta = _apply_path_metadata(path, uid=uid, gid=gid, mode=mode, kind="direktori restore")
         if not ok_meta:
             return False, msg_meta

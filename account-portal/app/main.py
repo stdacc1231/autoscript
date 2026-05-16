@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import time
+from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .data import (
@@ -42,13 +46,80 @@ _XRAY_STATS_CACHE: dict[str, object] = {
     "totals": {},
 }
 
+RATE_LIMIT_WINDOW = 60
+RATE_LIMIT_MAX_REQUESTS = 60
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_STORE: dict[str, list[float]] = defaultdict(list)
+
+
+def _rate_limit_check(client_ip: str) -> bool:
+    now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW
+    with _RATE_LIMIT_LOCK:
+        hits = _RATE_LIMIT_STORE[client_ip]
+        hits[:] = [t for t in hits if t > cutoff]
+        if len(hits) >= RATE_LIMIT_MAX_REQUESTS:
+            return False
+        hits.append(now)
+        return True
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    _portal_web_index_file()
+    yield
+
+
 app = FastAPI(
     title="autoscript-account-portal",
     version="1.0.0",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+    lifespan=lifespan,
 )
+
+ACCOUNT_PORTAL_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("ACCOUNT_PORTAL_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+if ACCOUNT_PORTAL_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ACCOUNT_PORTAL_CORS_ORIGINS,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+        max_age=3600,
+    )
+
+
+def _client_ip_for_rate_limit(request: Request) -> str:
+    remote_addr = request.client.host if request.client else ""
+    if remote_addr not in {"127.0.0.1", "::1"}:
+        return remote_addr or "unknown"
+
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip
+
+    forwarded_for = [part.strip() for part in request.headers.get("X-Forwarded-For", "").split(",") if part.strip()]
+    if forwarded_for:
+        return forwarded_for[-1]
+    return remote_addr or "unknown"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = _client_ip_for_rate_limit(request)
+    if request.url.path.startswith("/api/") and not _rate_limit_check(client_ip):
+        return JSONResponse(
+            {"detail": "Terlalu banyak request. Coba lagi nanti."},
+            status_code=429,
+            headers={"Retry-After": str(RATE_LIMIT_WINDOW)},
+        )
+    return await call_next(request)
 
 
 def _portal_web_asset(path: str) -> Path | None:
@@ -90,11 +161,6 @@ def _human_rate(value: float) -> str:
     if amount >= 10:
         return f"{amount:.1f} {units[idx]}"
     return f"{amount:.2f} {units[idx]}"
-
-
-@app.on_event("startup")
-def ensure_portal_web_ready() -> None:
-    _portal_web_index_file()
 
 
 def _to_int(value: object, default: int = 0) -> int:

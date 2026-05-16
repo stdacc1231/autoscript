@@ -12,6 +12,11 @@ ExecStartPre=+/usr/local/bin/autoscript-license-check check --stage runtime --al
 ExecStart=/opt/bot-telegram/.venv/bin/python -m uvicorn app.main:app --host ${BACKEND_HOST} --port ${BACKEND_PORT}
 Restart=always
 RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

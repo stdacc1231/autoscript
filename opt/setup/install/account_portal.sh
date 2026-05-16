@@ -67,8 +67,12 @@ install_account_portal() {
   local portal_py_files=()
   mapfile -t portal_py_files < <(find "${ACCOUNT_PORTAL_ROOT}/app" -name '*.py' | sort)
   if (( ${#portal_py_files[@]} > 0 )); then
-    python3 -m py_compile "${portal_py_files[@]}"
+    "${ACCOUNT_PORTAL_ROOT}/.venv/bin/python" -m py_compile "${portal_py_files[@]}"
   fi
+  (
+    cd "${ACCOUNT_PORTAL_ROOT}" || exit
+    "${ACCOUNT_PORTAL_ROOT}/.venv/bin/python" -c 'import app.main'
+  )
 
   render_setup_template_or_die \
     "systemd/account-portal.service" \
