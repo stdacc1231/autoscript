@@ -13,7 +13,6 @@
   <img src="https://img.shields.io/badge/Portal-Account-2563eb?style=flat-square&logo=vercel&logoColor=white" alt="Account Portal">
   <img src="https://img.shields.io/badge/Access-SSH%2FWebSocket-0ea5e9?style=flat-square&logo=protonvpn&logoColor=white" alt="SSH WebSocket">
   <img src="https://img.shields.io/badge/Utility-BadVPN-475569?style=flat-square&logo=wireguard&logoColor=white" alt="BadVPN">
-  <img src="https://img.shields.io/badge/Service-ZIVPN-16a34a?style=flat-square&logo=shield&logoColor=white" alt="ZIVPN">
   <img src="https://img.shields.io/badge/Support-Backup%20%26%20Restore-0f766e?style=flat-square&logo=icloud&logoColor=white" alt="Backup and Restore">
   <img src="https://img.shields.io/badge/Zero%20Trust-Cloudflare%20WARP-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare WARP">
 </p>
@@ -23,7 +22,7 @@
 - `autoscript` = repo utama untuk stack VPS lengkap
 - `run.sh` = bootstrap host
 - `manage` = panel operasi harian
-- `Xray`, `SSH/WebSocket`, `ZIVPN`, `BadVPN`, `WARP`
+- `Xray`, `SSH/WebSocket`, `BadVPN`, `WARP`
 - `Account Portal`, `Bot Telegram`, `Backup/Restore`, `Domain Guard`, `Uninstall`
 
 ## Status Biaya
@@ -75,7 +74,6 @@ Internet / Cloudflare
 
 - `Xray` untuk `VLESS`, `VMess`, dan `Trojan`
 - `SSH Direct`, `SSH SSL/TLS`, dan `SSH WS`
-- `ZIVPN`
 - `BadVPN UDPGW`
 - `WARP Free/Plus` dan `WARP Zero Trust`
 
@@ -122,7 +120,6 @@ Internet / Cloudflare
 | `sshws-proxy` | backend SSH WebSocket | internal |
 | `badvpn-udpgw` | UDPGW lokal | internal |
 | `wireproxy` / `warp-svc` | runtime WARP | sesuai mode aktif |
-| `zivpn` | backend UDP ZIVPN | internal |
 | `account-portal` | portal akun read-only | opsional |
 | `bot-telegram-backend` | API internal bot | opsional |
 | `bot-telegram-gateway` | gateway Telegram | opsional |
@@ -426,7 +423,7 @@ Repo ini menggunakan lisensi `GPL-3.0-or-later`.
 Jika Anda membutuhkan satu repositori yang dapat:
 
 - menginstal VPS dari nol
-- menyediakan layanan `Xray`, `SSH`, `ZIVPN`, dan `WARP`
+- menyediakan layanan `Xray`, `SSH`, dan `WARP`
 - memberikan panel CLI yang kuat untuk operasi harian
 - menyediakan portal akun dan bot Telegram
 - tetap nyaman dipakai untuk maintenance, troubleshooting, dan recovery

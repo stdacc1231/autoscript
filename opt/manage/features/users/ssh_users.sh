@@ -145,109 +145,7 @@ ssh_state_dirs_prepare() {
   done < <(find "${SSH_USERS_STATE_DIR}" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null)
 }
 
-zivpn_runtime_available() {
-  [[ -x "${ZIVPN_SYNC_BIN:-}" ]] || return 1
-  [[ -f "/etc/systemd/system/${ZIVPN_SERVICE:-}" || -f "/lib/systemd/system/${ZIVPN_SERVICE:-}" || -f "${ZIVPN_CONFIG_FILE:-}" ]] || return 1
-  return 0
-}
 
-zivpn_password_file() {
-  local username="${1:-}"
-  printf '%s/%s.pass\n' "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" "${username}"
-}
-
-zivpn_user_password_synced() {
-  local username="${1:-}"
-  [[ -n "${username}" ]] || return 1
-  zivpn_runtime_available || return 1
-  [[ -f "$(zivpn_password_file "${username}")" ]]
-}
-
-zivpn_password_read() {
-  local username="${1:-}"
-  local path
-  path="$(zivpn_password_file "${username}")"
-  [[ -f "${path}" ]] || {
-    echo "-"
-    return 0
-  }
-  tr -d '\r\n' < "${path}" 2>/dev/null || echo "-"
-}
-
-zivpn_sync_runtime_now() {
-  zivpn_runtime_available || return 1
-  "${ZIVPN_SYNC_BIN}" \
-    --config "${ZIVPN_CONFIG_FILE:-/etc/zivpn/config.json}" \
-    --passwords-dir "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" \
-    --listen ":${ZIVPN_LISTEN_PORT:-5667}" \
-    --cert "${ZIVPN_CERT_FILE:-/etc/zivpn/zivpn.crt}" \
-    --key "${ZIVPN_KEY_FILE:-/etc/zivpn/zivpn.key}" \
-    --obfs "${ZIVPN_OBFS:-zivpn}" \
-    --account-dir "${SSH_ACCOUNT_DIR}" \
-    --service "${ZIVPN_SERVICE:-zivpn.service}" \
-    --sync-service-state >/dev/null 2>&1
-}
-
-zivpn_store_user_password() {
-  local username="${1:-}"
-  local password="${2:-}"
-  local dst tmp
-  [[ -n "${username}" && -n "${password}" ]] || return 1
-  install -d -m 700 "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}"
-  dst="$(zivpn_password_file "${username}")"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/zivpn-pass.XXXXXX")" || return 1
-  if ! printf '%s\n' "${password}" > "${tmp}"; then
-    rm -f "${tmp}" >/dev/null 2>&1 || true
-    return 1
-  fi
-  if ! install -m 600 "${tmp}" "${dst}"; then
-    rm -f "${tmp}" >/dev/null 2>&1 || true
-    return 1
-  fi
-  chown root:root "${dst}" 2>/dev/null || true
-  rm -f "${tmp}" >/dev/null 2>&1 || true
-  return 0
-}
-
-zivpn_sync_user_password_warn() {
-  local username="${1:-}"
-  local password="${2:-}"
-  zivpn_runtime_available || return 0
-  if ! zivpn_store_user_password "${username}" "${password}"; then
-    warn "ZIVPN password store gagal diperbarui untuk '${username}'."
-    return 1
-  fi
-  if ! zivpn_sync_runtime_now; then
-    warn "Runtime ZIVPN gagal disinkronkan untuk '${username}'."
-    return 1
-  fi
-  return 0
-}
-
-zivpn_remove_user_password_warn() {
-  local username="${1:-}"
-  zivpn_runtime_available || return 0
-  local path
-  path="$(zivpn_password_file "${username}")"
-  if [[ -e "${path}" || -L "${path}" ]]; then
-    rm -f "${path}" >/dev/null 2>&1 || true
-    if [[ -e "${path}" || -L "${path}" ]]; then
-      warn "File password ZIVPN gagal dihapus untuk '${username}'."
-      return 1
-    fi
-  fi
-  if ! zivpn_sync_runtime_now; then
-    warn "Runtime ZIVPN gagal disinkronkan setelah hapus akun '${username}'."
-    return 1
-  fi
-  return 0
-}
-
-zivpn_account_info_enabled() {
-  zivpn_runtime_available || return 1
-  [[ -n "${ZIVPN_LISTEN_PORT:-}" ]] || return 1
-  return 0
-}
 
 ssh_user_state_file() {
   local username="${1:-}"
@@ -1198,12 +1096,6 @@ ssh_account_info_password_get() {
 
 ssh_previous_password_get() {
   local username="${1:-}"
-  local password
-  password="$(zivpn_password_read "${username}")"
-  if [[ -n "${password}" && "${password}" != "-" ]]; then
-    echo "${password}"
-    return 0
-  fi
   ssh_account_info_password_get "${username}"
 }
 
@@ -1489,18 +1381,7 @@ PY
   ssh_alt_tls_ports_disp="$(ssh_alt_tls_public_ports_label)"
   ssh_alt_http_ports_disp="$(ssh_alt_http_public_ports_label)"
   badvpn_port_disp="$(badvpn_public_port_label)"
-  local zivpn_block=""
-  account_info_labels=(
-    "SSH WS Path"
-    "SSH WS Path Alt"
-    "SSH WS Port"
-    "SSH Direct Port"
-    "SSH SSL/TLS Port"
-    "Alt Port SSL/TLS"
-    "Alt Port HTTP"
-    "BadVPN UDPGW"
     "Portal SSH"
-    "ZIVPN Password"
   )
   running_label_width=0
   local label=""
@@ -1517,15 +1398,6 @@ PY
   printf -v running_badvpn '%-*s : %s' "${running_label_width}" "BadVPN UDPGW" "${badvpn_port_disp}"
   local running_portal_ssh
   printf -v running_portal_ssh '%-*s : %s' "${running_label_width}" "Portal SSH" "${portal_ssh_link}"
-  if zivpn_account_info_enabled; then
-    local zivpn_password_line
-    if zivpn_user_password_synced "${username}"; then
-      printf -v zivpn_password_line '%-*s : %s' "${running_label_width}" "ZIVPN Password" "same as SSH password"
-    else
-      printf -v zivpn_password_line '%-*s : %s' "${running_label_width}" "ZIVPN Password" "not synced to runtime"
-    fi
-    zivpn_block=$'\n'"=== ZIVPN UDP ==="$'\n'"${zivpn_password_line}"
-  fi
   local tmp_acc_file=""
   mkdir -p "$(dirname "${acc_file}")" 2>/dev/null || return 1
   tmp_acc_file="$(mktemp "${acc_file}.tmp.XXXXXX" 2>/dev/null || true)"
@@ -1555,7 +1427,6 @@ ${running_ssh_alt_tls}
 ${running_ssh_alt_http}
 ${running_badvpn}
 ${running_portal_ssh}
-${zivpn_block}
 EOF
   then
     rm -f "${tmp_acc_file}" >/dev/null 2>&1 || true
@@ -1837,7 +1708,7 @@ ssh_collect_candidate_users() {
     fi
     seen_users["${name}"]=1
     printf '%s\n' "${name}"
-  done < <(find "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" -maxdepth 1 -type f -name '*.pass' -printf '%f\n' 2>/dev/null | sort -u)
+  done < <(find "${SSH_ACCOUNT_DIR}" -maxdepth 1 -type f -name '*.txt' -printf '%f\n' 2>/dev/null | sort -u)
 
   if [[ "${include_linux}" == "true" ]]; then
     while IFS= read -r name; do
@@ -2063,9 +1934,7 @@ ssh_password_reset_rollback() {
   local account_mode="${3:-absent}"
   local account_backup="${4:-}"
   local account_file="${5:-}"
-  local zivpn_mode="${6:-absent}"
-  local zivpn_backup="${7:-}"
-  local zivpn_file="${8:-}"
+
   [[ -n "${username}" ]] || {
     echo "username rollback kosong"
     return 1
@@ -2087,27 +1956,7 @@ ssh_password_reset_rollback() {
     rollback_notes="account info rollback gagal"
   fi
 
-  if [[ -n "${zivpn_file}" ]]; then
-    if ! ssh_optional_file_snapshot_restore "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 600; then
-      if [[ -n "${rollback_notes}" ]]; then
-        rollback_notes="${rollback_notes} | restore file ZIVPN gagal"
-      else
-        rollback_notes="restore file ZIVPN gagal"
-      fi
-    elif zivpn_runtime_available && ! zivpn_sync_runtime_now; then
-      if [[ -n "${rollback_notes}" ]]; then
-        rollback_notes="${rollback_notes} | rollback ZIVPN gagal"
-      else
-        rollback_notes="rollback ZIVPN gagal"
-      fi
-    fi
-  elif ! zivpn_sync_user_password_warn "${username}" "${previous_password}"; then
-    if [[ -n "${rollback_notes}" ]]; then
-      rollback_notes="${rollback_notes} | rollback ZIVPN gagal"
-    else
-      rollback_notes="rollback ZIVPN gagal"
-    fi
-  fi
+
   if [[ -n "${rollback_notes}" ]]; then
     echo "password Linux dipulihkan, tetapi ${rollback_notes}"
     return 1
@@ -2146,22 +1995,17 @@ ssh_expiry_update_rollback() {
 }
 
 ssh_add_user_rollback() {
-  # args: username qf acc_file reason raw_password cleanup_zivpn linux_created
+  # args: username qf acc_file reason raw_password linux_created
   local username="${1:-}"
   local qf="${2:-}"
   local acc_file="${3:-}"
   local reason="${4:-Gagal membuat akun SSH.}"
   local raw_password="${5:-}"
-  local cleanup_zivpn="${6:-false}"
-  local linux_created="${7:-false}"
+  local linux_created="${6:-false}"
   local deleted="false"
   local -a rollback_notes=()
 
-  if [[ "${cleanup_zivpn}" == "true" ]]; then
-    if ! zivpn_remove_user_password_warn "${username}"; then
-      rollback_notes+=("cleanup ZIVPN gagal")
-    fi
-  fi
+
 
   if [[ "${linux_created}" == "true" ]]; then
     if id "${username}" >/dev/null 2>&1; then
@@ -2199,13 +2043,7 @@ ssh_add_user_rollback() {
   # Hindari orphan-silent: saat userdel gagal, pertahankan metadata agar status masih terlihat.
   warn "${reason}"
   warn "Rollback parsial: gagal menghapus user Linux '${username}'."
-  if [[ "${cleanup_zivpn}" == "true" && -n "${raw_password}" && "${raw_password}" != "-" ]]; then
-    if ! zivpn_sync_user_password_warn "${username}" "${raw_password}"; then
-      warn "Rollback parsial tambahan: rollback ZIVPN gagal untuk '${username}'."
-    else
-      warn "Rollback parsial tambahan: rollback ZIVPN berhasil untuk '${username}'."
-    fi
-  fi
+
   if (( ${#rollback_notes[@]} > 0 )); then
     warn "Rollback tambahan: $(IFS=' | '; echo "${rollback_notes[*]}")"
   fi
@@ -2214,16 +2052,15 @@ ssh_add_user_rollback() {
 }
 
 ssh_add_user_fail_with_rollback() {
-  # args: username qf acc_file reason raw_password cleanup_zivpn linux_created txn_dir
+  # args: username qf acc_file reason raw_password linux_created txn_dir
   local username="${1:-}"
   local qf="${2:-}"
   local acc_file="${3:-}"
   local reason="${4:-Gagal membuat akun SSH.}"
   local raw_password="${5:-}"
-  local cleanup_zivpn="${6:-false}"
-  local linux_created="${7:-false}"
-  local txn_dir="${8:-}"
-  if ssh_add_user_rollback "${username}" "${qf}" "${acc_file}" "${reason}" "${raw_password}" "${cleanup_zivpn}" "${linux_created}"; then
+  local linux_created="${6:-false}"
+  local txn_dir="${7:-}"
+  if ssh_add_user_rollback "${username}" "${qf}" "${acc_file}" "${reason}" "${raw_password}" "${linux_created}"; then
     ssh_add_txn_marker_clear "${username}" >/dev/null 2>&1 || true
     mutation_txn_dir_remove "${txn_dir}"
   else
@@ -2451,11 +2288,7 @@ ssh_add_txn_recover_dir() {
   fi
 
   if ! id "${username}" >/dev/null 2>&1; then
-    local orphan_zivpn_file=""
-    orphan_zivpn_file="$(zivpn_password_file "${username}")"
-    if [[ -e "${orphan_zivpn_file}" || -L "${orphan_zivpn_file}" ]]; then
-      zivpn_remove_user_password_warn "${username}" >/dev/null 2>&1 || true
-    fi
+
     cleanup_failed="$(ssh_user_artifacts_cleanup_locked "${username}" 2>/dev/null || true)"
     if [[ -n "${cleanup_failed}" ]]; then
       warn "Recovery add SSH untuk '${username}' belum bersih: cleanup artefak gagal (${cleanup_failed})."
@@ -2518,9 +2351,7 @@ ssh_add_txn_recover_dir() {
   if (( ${#notes[@]} == 0 )) && ! ssh_account_info_refresh_from_state "${username}" "${password}" "${acc_file}"; then
     notes+=("refresh SSH account info gagal")
   fi
-  if (( ${#notes[@]} == 0 )) && ! zivpn_sync_user_password_warn "${username}" "${password}"; then
-    notes+=("sinkronisasi password ZIVPN gagal")
-  fi
+
   if (( ${#notes[@]} == 0 )) && ! ssh_qac_enforce_now_warn "${username}"; then
     notes+=("enforcement awal SSH gagal")
   fi
@@ -2580,15 +2411,10 @@ ssh_userdel_purge() {
 
 ssh_delete_user_cleanup_after_linux_delete() {
   local username="${1:-}"
-  local zivpn_file="${2:-}"
   local cleanup_failed=""
   local -a notes=()
 
   [[ -n "${username}" ]] || return 1
-
-  if [[ -n "${zivpn_file}" ]] && ! zivpn_remove_user_password_warn "${username}"; then
-    notes+=("cleanup ZIVPN gagal")
-  fi
 
   cleanup_failed="$(ssh_user_artifacts_cleanup_locked "${username}" 2>/dev/null || true)"
   if [[ -n "${cleanup_failed}" ]]; then
@@ -2608,18 +2434,17 @@ ssh_delete_user_cleanup_after_linux_delete() {
 
 ssh_delete_txn_recover_dir() {
   local txn_dir="${1:-}"
-  local username linux_deleted zivpn_file cleanup_failed=""
+  local username linux_deleted cleanup_failed=""
   local state_mode="absent" state_backup="" state_file=""
   local state_compat_mode="absent" state_compat_backup="" state_compat_file=""
   local account_mode="absent" account_backup="" account_file=""
   local account_compat_mode="absent" account_compat_backup="" account_compat_file=""
-  local zivpn_mode="absent" zivpn_backup="" linux_meta_file=""
+  local linux_meta_file=""
   local restore_msg=""
   [[ -n "${txn_dir}" && -d "${txn_dir}" ]] || return 0
 
   username="$(mutation_txn_field_read "${txn_dir}" username 2>/dev/null || true)"
   linux_deleted="$(mutation_txn_field_read "${txn_dir}" linux_deleted 2>/dev/null || true)"
-  zivpn_file="$(mutation_txn_field_read "${txn_dir}" zivpn_file 2>/dev/null || true)"
   if [[ -z "${username}" ]]; then
     mutation_txn_dir_remove "${txn_dir}"
     return 0
@@ -2632,10 +2457,6 @@ ssh_delete_txn_recover_dir() {
   [[ -f "${txn_dir}/state_compat.path" ]] && state_compat_mode="file" && state_compat_backup="${txn_dir}/state_compat.path"
   [[ -f "${txn_dir}/account.path" ]] && account_mode="file" && account_backup="${txn_dir}/account.path"
   [[ -f "${txn_dir}/account_compat.path" ]] && account_compat_mode="file" && account_compat_backup="${txn_dir}/account_compat.path"
-  if [[ -n "${zivpn_file}" && -f "${txn_dir}/zivpn.path" ]]; then
-    zivpn_mode="file"
-    zivpn_backup="${txn_dir}/zivpn.path"
-  fi
   linux_meta_file="${txn_dir}/linux-account.meta"
   if [[ "${linux_deleted}" != "1" ]]; then
     if id "${username}" >/dev/null 2>&1; then
@@ -2648,8 +2469,7 @@ ssh_delete_txn_recover_dir() {
         "${state_mode}" "${state_backup}" "${state_file}" \
         "${state_compat_mode}" "${state_compat_backup}" "${state_compat_file}" \
         "${account_mode}" "${account_backup}" "${account_file}" \
-        "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \
-        "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 2>/dev/null || true)"
+        "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" 2>/dev/null || true)"
       if [[ -n "${restore_msg}" ]]; then
         warn "Recovery delete SSH untuk '${username}' belum bersih: ${restore_msg}"
         return 1
@@ -2658,7 +2478,7 @@ ssh_delete_txn_recover_dir() {
       log "Recovery delete SSH memulihkan state pra-delete untuk '${username}'."
       return 0
     fi
-    cleanup_failed="$(ssh_delete_user_cleanup_after_linux_delete "${username}" "${zivpn_file}" 2>/dev/null || true)"
+    cleanup_failed="$(ssh_delete_user_cleanup_after_linux_delete "${username}" 2>/dev/null || true)"
     if [[ -n "${cleanup_failed}" ]]; then
       warn "Recovery delete SSH untuk '${username}' belum bersih: ${cleanup_failed}"
       return 1
@@ -2809,7 +2629,7 @@ ssh_recover_pending_txn_menu() {
     pause
     return 0
   fi
-  echo "Catatan        : aksi ini bisa memodifikasi akun Linux, metadata SSH, dan sinkronisasi ZIVPN untuk menyelesaikan transaksi lama."
+  echo "Catatan        : aksi ini bisa memodifikasi akun Linux dan metadata SSH untuk menyelesaikan transaksi lama."
   hr
   echo "  1) Recover journal Add"
   echo "  2) Recover journal Delete"
@@ -3013,7 +2833,6 @@ ssh_add_user_apply_locked() {
     SSH_ADD_ABORT_ACC="$3"
     SSH_ADD_ABORT_PASSWORD="$4"
     SSH_ADD_ABORT_LINUX_CREATED="false"
-    SSH_ADD_ABORT_ZIVPN_SYNCED="false"
     trap '
       if [[ "${SSH_ADD_ABORT_ACTIVE:-0}" == "1" ]]; then
         ssh_add_user_rollback \
@@ -3022,7 +2841,6 @@ ssh_add_user_apply_locked() {
           "${SSH_ADD_ABORT_ACC}" \
           "transaksi add user SSH terputus sebelum commit final" \
           "${SSH_ADD_ABORT_PASSWORD}" \
-          "${SSH_ADD_ABORT_ZIVPN_SYNCED:-false}" \
           "${SSH_ADD_ABORT_LINUX_CREATED:-false}" >/dev/null 2>&1 || true
       fi
     ' EXIT INT TERM HUP QUIT
@@ -3129,12 +2947,7 @@ ssh_add_user_apply_locked_inner() {
     pause
     return 1
   fi
-  if ! zivpn_sync_user_password_warn "${username}" "${password}"; then
-    ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal menyiapkan sinkronisasi password ZIVPN sebelum commit user Linux." "${password}" "false" "false" "${add_txn_dir}"
-    pause
-    return 1
-  fi
-  SSH_ADD_ABORT_ZIVPN_SYNCED="true"
+
   if ! ssh_add_txn_marker_write "${username}" "${add_txn_id}"; then
     ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal menulis marker transaksi add SSH." "${password}" "false" "false" "${add_txn_dir}"
     pause
@@ -3196,7 +3009,7 @@ ssh_add_user_apply_locked_inner() {
     return 1
   fi
   if ! ssh_account_info_refresh_from_state "${username}" "${password}" "${acc_file}"; then
-    ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal refresh final SSH account info user '${username}' setelah sinkronisasi ZIVPN." "${password}" "true" "true" "${add_txn_dir}"
+    ssh_add_user_fail_with_rollback "${username}" "${qf}" "${acc_file}" "Gagal refresh final SSH account info user '${username}'." "${password}" "true" "true" "${add_txn_dir}"
     pause
     return 1
   fi
@@ -3242,9 +3055,6 @@ ssh_delete_user_snapshot_restore() {
   local account_compat_mode="${11}"
   local account_compat_backup="${12}"
   local account_compat_file="${13}"
-  local zivpn_mode="${14}"
-  local zivpn_backup="${15}"
-  local zivpn_file="${16}"
   local -a notes=()
 
   if ! ssh_optional_file_snapshot_restore "${state_mode}" "${state_backup}" "${state_file}" 600; then
@@ -3259,13 +3069,7 @@ ssh_delete_user_snapshot_restore() {
   if ! ssh_optional_file_snapshot_restore "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" 600; then
     notes+=("restore SSH ACCOUNT INFO compat gagal")
   fi
-  if [[ -n "${zivpn_file}" ]]; then
-    if ! ssh_optional_file_snapshot_restore "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 600; then
-      notes+=("restore password ZIVPN gagal")
-    elif zivpn_runtime_available && ! zivpn_sync_runtime_now; then
-      notes+=("sync runtime ZIVPN rollback gagal")
-    fi
-  fi
+
   if ! ssh_dns_adblock_runtime_refresh_if_available; then
     notes+=("refresh runtime DNS adblock rollback gagal")
   fi
@@ -3356,9 +3160,6 @@ ssh_delete_user_os_rollback() {
   local account_compat_mode="${12:-absent}"
   local account_compat_backup="${13:-}"
   local account_compat_file="${14}"
-  local zivpn_mode="${15:-absent}"
-  local zivpn_backup="${16:-}"
-  local zivpn_file="${17:-}"
   local linux_meta_file="${18:-}"
   local home_mode="${19:-absent}"
   local home_backup="${20:-}"
@@ -3439,8 +3240,7 @@ ssh_delete_user_os_rollback() {
     "${state_mode}" "${state_backup}" "${state_file}" \
     "${state_compat_mode}" "${state_compat_backup}" "${state_compat_file}" \
     "${account_mode}" "${account_backup}" "${account_file}" \
-    "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \
-    "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 2>/dev/null || true)"
+    "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" 2>/dev/null || true)"
   if [[ -n "${restore_msg}" ]]; then
     echo "${restore_msg}"
     return 1
@@ -3453,14 +3253,12 @@ ssh_delete_user_apply_locked() {
   local username="$1"
   local previous_password="$2"
   local linux_exists="$3"
-  local zivpn_file=""
   local cleanup_failed=""
   local delete_txn_dir=""
   local snapshot_dir="" state_mode="absent" state_backup="" state_file=""
   local state_compat_mode="absent" state_compat_backup="" state_compat_file=""
   local account_mode="absent" account_backup="" account_file=""
   local account_compat_mode="absent" account_compat_backup="" account_compat_file=""
-  local zivpn_mode="absent" zivpn_backup=""
   local linux_meta_file=""
   local home_mode="absent" home_backup=""
   local rollback_restored="false"
@@ -3471,9 +3269,6 @@ ssh_delete_user_apply_locked() {
     warn "Gagal menyiapkan journal recovery delete user SSH."
     pause
     return 1
-  fi
-  if zivpn_runtime_available; then
-    zivpn_file="$(zivpn_password_file "${username}")"
   fi
   state_file="$(ssh_user_state_file "${username}")"
   state_compat_file="$(ssh_user_state_compat_file "${username}")"
@@ -3489,12 +3284,7 @@ ssh_delete_user_apply_locked() {
     pause
     return 1
   fi
-  if [[ -n "${zivpn_file}" ]] && ! ssh_optional_file_snapshot_create "${zivpn_file}" "${snapshot_dir}" zivpn_mode zivpn_backup; then
-    mutation_txn_dir_remove "${delete_txn_dir}"
-    warn "Gagal membuat snapshot password ZIVPN sebelum delete."
-    pause
-    return 1
-  fi
+
   if ! ssh_home_snapshot_create "${username}" "${snapshot_dir}" home_mode home_backup; then
     mutation_txn_dir_remove "${delete_txn_dir}"
     warn "Gagal membuat snapshot home user Linux sebelum delete."
@@ -3509,7 +3299,7 @@ ssh_delete_user_apply_locked() {
   fi
   mutation_txn_field_write "${delete_txn_dir}" username "${username}" >/dev/null 2>&1 || true
   mutation_txn_field_write "${delete_txn_dir}" linux_deleted "0" >/dev/null 2>&1 || true
-  [[ -n "${zivpn_file}" ]] && mutation_txn_field_write "${delete_txn_dir}" zivpn_file "${zivpn_file}" >/dev/null 2>&1 || true
+
 
   if [[ "${linux_exists}" == "true" ]] && ! ssh_delete_user_quarantine_for_delete "${username}"; then
     local restore_msg=""
@@ -3518,8 +3308,7 @@ ssh_delete_user_apply_locked() {
       "${state_mode}" "${state_backup}" "${state_file}" \
       "${state_compat_mode}" "${state_compat_backup}" "${state_compat_file}" \
       "${account_mode}" "${account_backup}" "${account_file}" \
-      "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \
-      "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 2>/dev/null || true)"
+      "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \ 2>/dev/null || true)"
     mutation_txn_dir_remove "${delete_txn_dir}"
     warn "Gagal mengarantina akun Linux '${username}' sebelum delete."
     [[ -n "${restore_msg}" ]] && warn "Rollback snapshot belum sepenuhnya bersih: ${restore_msg}"
@@ -3527,7 +3316,7 @@ ssh_delete_user_apply_locked() {
     return 1
   fi
 
-  cleanup_failed="$(ssh_delete_user_cleanup_after_linux_delete "${username}" "${zivpn_file}" 2>/dev/null || true)"
+  cleanup_failed="$(ssh_delete_user_cleanup_after_linux_delete "${username}" 2>/dev/null || true)"
   if [[ -n "${cleanup_failed}" ]]; then
     local rollback_msg=""
     rollback_msg="$(ssh_delete_user_predelete_restore "${username}" "${linux_meta_file}" "${state_mode}" "${state_backup}" 2>/dev/null || true)"
@@ -3540,8 +3329,7 @@ ssh_delete_user_apply_locked() {
         "${state_mode}" "${state_backup}" "${state_file}" \
         "${state_compat_mode}" "${state_compat_backup}" "${state_compat_file}" \
         "${account_mode}" "${account_backup}" "${account_file}" \
-        "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \
-        "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 2>/dev/null || true)"
+        "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \ 2>/dev/null || true)"
       if [[ -z "${rollback_msg}" ]]; then
         rollback_restored="true"
         cleanup_failed=""
@@ -3561,8 +3349,7 @@ ssh_delete_user_apply_locked() {
       "${state_mode}" "${state_backup}" "${state_file}" \
       "${state_compat_mode}" "${state_compat_backup}" "${state_compat_file}" \
       "${account_mode}" "${account_backup}" "${account_file}" \
-      "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \
-      "${zivpn_mode}" "${zivpn_backup}" "${zivpn_file}" 2>/dev/null || true)"
+      "${account_compat_mode}" "${account_compat_backup}" "${account_compat_file}" \ 2>/dev/null || true)"
     [[ -n "${restore_msg}" ]] && notes+=("rollback snapshot gagal: ${restore_msg}")
     cleanup_failed="Gagal menghapus user Linux '${username}' setelah cleanup artefak selesai."
   elif [[ -z "${cleanup_failed}" ]]; then
@@ -3652,12 +3439,8 @@ ssh_reset_password_apply_locked() {
   local previous_password="$2"
   local password="$3"
   local snapshot_dir="" account_snapshot_mode="absent" account_snapshot_backup="" account_file=""
-  local zivpn_snapshot_mode="absent" zivpn_snapshot_backup="" zivpn_file=""
 
   account_file="$(ssh_account_info_file "${username}")"
-  if zivpn_runtime_available; then
-    zivpn_file="$(zivpn_password_file "${username}")"
-  fi
   snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/ssh-reset.${username}.XXXXXX" 2>/dev/null || true)"
   if [[ -z "${snapshot_dir}" || ! -d "${snapshot_dir}" ]]; then
     warn "Gagal menyiapkan snapshot rollback password SSH."
@@ -3670,14 +3453,7 @@ ssh_reset_password_apply_locked() {
     pause
     return 1
   fi
-  if [[ -n "${zivpn_file}" ]]; then
-    if ! ssh_optional_file_snapshot_create "${zivpn_file}" "${snapshot_dir}" zivpn_snapshot_mode zivpn_snapshot_backup; then
-      rm -rf "${snapshot_dir}" >/dev/null 2>&1 || true
-      warn "Gagal membuat snapshot password ZIVPN sebelum reset password."
-      pause
-      return 1
-    fi
-  fi
+
 
   if ! ssh_apply_password "${username}" "${password}"; then
     rm -rf "${snapshot_dir}" >/dev/null 2>&1 || true
@@ -3688,7 +3464,7 @@ ssh_reset_password_apply_locked() {
 
   if ! ssh_account_info_refresh_from_state "${username}" "${password}"; then
     local rollback_msg=""
-    rollback_msg="$(ssh_password_reset_rollback "${username}" "${previous_password}" "${account_snapshot_mode}" "${account_snapshot_backup}" "${account_file}" "${zivpn_snapshot_mode}" "${zivpn_snapshot_backup}" "${zivpn_file}" 2>/dev/null || true)"
+    rollback_msg="$(ssh_password_reset_rollback "${username}" "${previous_password}" "${account_snapshot_mode}" "${account_snapshot_backup}" "${account_file}" 2>/dev/null || true)"
     rm -rf "${snapshot_dir}" >/dev/null 2>&1 || true
     if [[ -n "${rollback_msg}" ]]; then
       warn "SSH ACCOUNT INFO gagal disinkronkan untuk '${username}'. Rollback: ${rollback_msg}"
@@ -3698,21 +3474,9 @@ ssh_reset_password_apply_locked() {
     pause
     return 1
   fi
-  if ! zivpn_sync_user_password_warn "${username}" "${password}"; then
-    local rollback_msg=""
-    rollback_msg="$(ssh_password_reset_rollback "${username}" "${previous_password}" "${account_snapshot_mode}" "${account_snapshot_backup}" "${account_file}" "${zivpn_snapshot_mode}" "${zivpn_snapshot_backup}" "${zivpn_file}" 2>/dev/null || true)"
-    rm -rf "${snapshot_dir}" >/dev/null 2>&1 || true
-    if [[ -n "${rollback_msg}" ]]; then
-      warn "Runtime ZIVPN gagal disinkronkan untuk '${username}'. Rollback: ${rollback_msg}"
-    else
-      warn "Runtime ZIVPN gagal disinkronkan untuk '${username}'."
-    fi
-    pause
-    return 1
-  fi
   if ! ssh_account_info_refresh_from_state "${username}" "${password}"; then
     local rollback_msg=""
-    rollback_msg="$(ssh_password_reset_rollback "${username}" "${previous_password}" "${account_snapshot_mode}" "${account_snapshot_backup}" "${account_file}" "${zivpn_snapshot_mode}" "${zivpn_snapshot_backup}" "${zivpn_file}" 2>/dev/null || true)"
+    rollback_msg="$(ssh_password_reset_rollback "${username}" "${previous_password}" "${account_snapshot_mode}" "${account_snapshot_backup}" "${account_file}" 2>/dev/null || true)"
     rm -rf "${snapshot_dir}" >/dev/null 2>&1 || true
     if [[ -n "${rollback_msg}" ]]; then
       warn "Refresh final SSH ACCOUNT INFO gagal untuk '${username}'. Rollback: ${rollback_msg}"

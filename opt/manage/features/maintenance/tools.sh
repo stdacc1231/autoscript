@@ -212,7 +212,6 @@ xray-speed.service
 xray-xhttp3-udphop.service
 xray.service
 xray@.service
-zivpn.service
 warp-svc.service
 nginx.service
 dropbear.service
@@ -231,7 +230,6 @@ autoscript_uninstall_collect_ssh_users() {
 
   [[ -d "${SSH_USERS_STATE_DIR}" ]] && inputs+=("${SSH_USERS_STATE_DIR}")
   [[ -d "${SSH_ACCOUNT_DIR}" ]] && inputs+=("${SSH_ACCOUNT_DIR}")
-  [[ -d "${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}" ]] && inputs+=("${ZIVPN_PASSWORDS_DIR:-/etc/zivpn/passwords}")
   (( ${#inputs[@]} > 0 )) || return 0
 
   while IFS= read -r f; do
@@ -424,7 +422,7 @@ autoscript_uninstall_warning_screen() {
   warn "Mode ini akan menghapus stack autoscript secara keras dari host ini."
   echo
   echo "Yang akan dihapus:"
-  echo "  - service/timer autoscript (Xray stack, SSH WS, BadVPN, ZIVPN, edge, bot, portal)"
+  echo "  - service/timer autoscript (Xray stack, SSH WS, BadVPN, edge, bot, portal)"
   echo "  - akun SSH/Xray, quota, account info, runtime state, log, backup config"
   echo "  - cert/domain lokal, ACME state lokal, token/env bot, WARP/WireGuard config"
   echo "  - binary helper /usr/local/bin dan unit /etc/systemd/system milik autoscript"
@@ -508,12 +506,10 @@ autoscript_full_hard_uninstall_apply() {
     "/usr/local/bin/ssh-warp-sync"
     "/usr/local/bin/xray-warp-sync"
     "/usr/local/bin/xray-xhttp3-udphop-rules"
-    "/usr/local/bin/zivpn-password-sync"
     "/usr/local/bin/badvpn-udpgw-launcher"
     "/usr/local/bin/badvpn-udpgw"
     "/usr/local/bin/wgcf"
     "/usr/local/bin/wireproxy"
-    "/usr/local/bin/zivpn"
     "/etc/logrotate.d/xray-nginx"
     "/var/lib/systemd/timers/stamp-autoscript-license-enforcer.timer"
     "/var/lib/systemd/timers/stamp-bot-telegram-monitor.timer"
@@ -563,7 +559,6 @@ autoscript_full_hard_uninstall_apply() {
     "${WGCF_DIR:-/etc/wgcf}"
     "${WIREGUARD_DIR:-/etc/wireguard}"
     "/var/lib/cloudflare-warp"
-    "/etc/zivpn"
     "/root/.acme.sh"
     "/var/lib/autoscript-backup"
     "/var/lib/autoscript-run"

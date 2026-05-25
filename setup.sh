@@ -129,8 +129,6 @@ EDGE_PROVIDER="${EDGE_PROVIDER:-go}"
 EDGE_ACTIVATE_RUNTIME="${EDGE_ACTIVATE_RUNTIME:-true}"
 # shellcheck source=opt/setup/install/badvpn.sh
 source_setup_module "opt/setup/install/badvpn.sh"
-# shellcheck source=opt/setup/install/zivpn.sh
-source_setup_module "opt/setup/install/zivpn.sh"
 # shellcheck source=opt/setup/install/network.sh
 source_setup_module "opt/setup/install/network.sh"
 # shellcheck source=opt/setup/install/xray.sh
@@ -209,7 +207,6 @@ setup_post_domain_main() {
   setup_run_step "Install SSH expired cleaner" install_ssh_expired_cleaner
   setup_run_step "Install SSH Adblock" install_ssh_dns_adblock_foundation
   setup_run_step "Install BadVPN UDPGW" install_badvpn_udpgw_stack
-  setup_run_step "Install ZIVPN UDP" install_zivpn_stack
   setup_run_step "Install management scripts" install_management_scripts
   setup_run_step "Install license guard" install_autoscript_license_runtime
   setup_run_step "Refresh ACCOUNT INFO" refresh_account_info_runtime

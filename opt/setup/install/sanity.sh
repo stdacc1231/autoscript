@@ -126,14 +126,7 @@ sanity_check() {
     failed=1
   fi
 
-  if systemctl is-active --quiet zivpn.service; then
-    ok "check: zivpn active"
-  else
-    warn "check: zivpn inactive"
-    systemctl status zivpn.service --no-pager >&2 || true
-    journalctl -u zivpn.service -n 120 --no-pager >&2 || true
-    failed=1
-  fi
+
 
   if systemctl is-active --quiet "${SSH_DNS_ADBLOCK_SERVICE}"; then
     ok "check: ssh adblock active"

@@ -2,7 +2,7 @@
 
 ## Tujuan
 
-Repo `autoscript` mengelola provisioning dan operasi VPS untuk `Xray`, `SSH WS`, `ZIVPN`, `WARP`, `edge-mux`, dan bot `Telegram`. Karena perubahan bisa berdampak langsung ke host produksi, pengujian harus mencakup validasi statis, smoke test, regression test per domain, dan E2E di VPS bersih.
+Repo `autoscript` mengelola provisioning dan operasi VPS untuk `Xray`, `SSH WS`, `WARP`, `edge-mux`, dan bot `Telegram`. Karena perubahan bisa berdampak langsung ke host produksi, pengujian harus mencakup validasi statis, smoke test, regression test per domain, dan E2E di VPS bersih.
 
 ## Level Pengujian
 
@@ -62,7 +62,6 @@ Setelah mengubah area tertentu, uji minimal flow berikut:
 - Domain: set domain, renew cert, cleanup DNS A record, refresh `ACCOUNT INFO`.
 - Xray/SSH users: create, extend expiry, reset credential/password, delete.
 - QAC: quota, speed, block/unblock, IP/login limit.
-- ZIVPN: sinkron metadata dengan akun SSH dan QAC.
 - WARP dan SSH Network: mode global, per-user, apply runtime.
 - Backup/Restore: create backup, list backup, restore, validasi rollback saat gagal.
 - Telegram bot: menu render, callback aman, ACL admin, upload restore bila diubah.
@@ -79,7 +78,7 @@ Checklist:
 - Install dari nol.
 - Reboot host.
 - Pastikan `xray`, `nginx`, `edge-mux`, `sshws`, dan service bot aktif sesuai fitur yang dipasang.
-- Uji koneksi nyata untuk `VLESS/VMess/Trojan`, `SSH WS`, dan `ZIVPN`.
+- Uji koneksi nyata untuk `VLESS/VMess/Trojan` dan `SSH WS`.
 - Jalankan installer lagi untuk cek idempotency.
 
 ## 5. Skenario Negatif

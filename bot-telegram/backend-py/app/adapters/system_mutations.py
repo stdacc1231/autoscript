@@ -41,14 +41,6 @@ SSHWS_PROXY_BIN = Path("/usr/local/bin/ws-proxy")
 SSHWS_QAC_ENFORCER_BIN = Path("/usr/local/bin/sshws-qac-enforcer")
 SSHWS_RUNTIME_SESSION_DIR = Path("/run/autoscript/sshws-sessions")
 SSHWS_LOCK_FILE = Path("/run/autoscript/locks/sshws-qac.lock")
-ZIVPN_SERVICE = "zivpn"
-ZIVPN_CONFIG_FILE = Path("/etc/zivpn/config.json")
-ZIVPN_SYNC_BIN = Path("/usr/local/bin/zivpn-password-sync")
-ZIVPN_PASSWORDS_DIR = Path("/etc/zivpn/passwords.d")
-ZIVPN_CERT_FILE = Path("/etc/zivpn/zivpn.crt")
-ZIVPN_KEY_FILE = Path("/etc/zivpn/zivpn.key")
-ZIVPN_DEFAULT_LISTEN = ":5667"
-ZIVPN_DEFAULT_OBFS = "zivpn"
 SPEED_CONFIG_FILE = Path("/etc/xray-speed/config.json")
 XRAY_CONFDIR = Path("/usr/local/etc/xray/conf.d")
 XRAY_INBOUNDS_CONF = XRAY_CONFDIR / "10-inbounds.json"
@@ -229,119 +221,6 @@ def _service_state(name: str) -> str:
         return out.splitlines()[-1].strip()
     return ""
 
-
-def _zivpn_account_info_enabled() -> bool:
-    return _zivpn_runtime_available()
-
-
-def _zivpn_runtime_available() -> bool:
-    if not ZIVPN_SYNC_BIN.exists():
-        return False
-    return _service_exists(ZIVPN_SERVICE) or ZIVPN_CONFIG_FILE.exists()
-
-
-def _zivpn_password_file(username: str) -> Path:
-    return ZIVPN_PASSWORDS_DIR / f"{str(username or '').strip()}.pass"
-
-
-def _zivpn_runtime_settings() -> dict[str, str]:
-    settings = {
-        "listen": ZIVPN_DEFAULT_LISTEN,
-        "cert": str(ZIVPN_CERT_FILE),
-        "key": str(ZIVPN_KEY_FILE),
-        "obfs": ZIVPN_DEFAULT_OBFS,
-    }
-    ok, payload = _read_json(ZIVPN_CONFIG_FILE)
-    if ok and isinstance(payload, dict):
-        for key in ("listen", "cert", "key", "obfs"):
-            value = str(payload.get(key) or "").strip()
-            if value:
-                settings[key] = value
-    listen = str(settings.get("listen") or "").strip() or ZIVPN_DEFAULT_LISTEN
-    if listen.isdigit():
-        listen = f":{listen}"
-    settings["listen"] = listen
-    return settings
-
-
-def _zivpn_sync_runtime() -> tuple[bool, str]:
-    if not _zivpn_runtime_available():
-        return True, "skip"
-    settings = _zivpn_runtime_settings()
-    return _run_cmd(
-        [
-            str(ZIVPN_SYNC_BIN),
-            "--config",
-            str(ZIVPN_CONFIG_FILE),
-            "--passwords-dir",
-            str(ZIVPN_PASSWORDS_DIR),
-            "--listen",
-            settings["listen"],
-            "--cert",
-            settings["cert"],
-            "--key",
-            settings["key"],
-            "--obfs",
-            settings["obfs"],
-            "--account-dir",
-            str(SSH_ACCOUNT_DIR),
-            "--service",
-            ZIVPN_SERVICE,
-            "--sync-service-state",
-        ],
-        timeout=30,
-    )
-
-
-def _zivpn_store_user_password(username: str, password: str) -> tuple[bool, str]:
-    username_n = str(username or "").strip()
-    password_n = str(password or "").strip()
-    if not username_n or not password_n:
-        return False, "username/password ZIVPN tidak valid"
-    try:
-        ZIVPN_PASSWORDS_DIR.mkdir(parents=True, exist_ok=True)
-        os.chmod(ZIVPN_PASSWORDS_DIR, 0o700)
-        dst = _zivpn_password_file(username_n)
-        _write_text_atomic(dst, password_n + "\n")
-        _chmod_600(dst)
-        return True, str(dst)
-    except Exception as exc:
-        return False, f"Gagal menyimpan password ZIVPN: {exc}"
-
-
-def _zivpn_sync_user_password(username: str, password: str) -> tuple[bool, str]:
-    if not _zivpn_runtime_available():
-        return True, "skip"
-    ok_store, store_msg = _zivpn_store_user_password(username, password)
-    if not ok_store:
-        return False, store_msg
-    return _zivpn_sync_runtime()
-
-
-def _zivpn_remove_user_password(username: str) -> tuple[bool, str]:
-    if not _zivpn_runtime_available():
-        return True, "skip"
-    try:
-        _zivpn_password_file(username).unlink(missing_ok=True)
-    except Exception as exc:
-        return False, f"Gagal menghapus password ZIVPN: {exc}"
-    return _zivpn_sync_runtime()
-
-
-def _zivpn_user_password_synced(username: str) -> bool:
-    if not _zivpn_runtime_available():
-        return False
-    return _zivpn_password_file(username).exists()
-
-
-def _zivpn_password_read(username: str) -> str:
-    if not _zivpn_runtime_available():
-        return "-"
-    try:
-        text = _zivpn_password_file(username).read_text(encoding="utf-8").strip()
-    except Exception:
-        return "-"
-    return text or "-"
 
 
 def _managed_ssh_usernames() -> list[str]:
@@ -2330,9 +2209,6 @@ def _ssh_password_from_account_info(username: str) -> str:
 
 
 def _ssh_previous_password(username: str) -> str:
-    password = _zivpn_password_read(username)
-    if password and password != "-":
-        return password
     return _ssh_password_from_account_info(username)
 
 
@@ -2832,7 +2708,6 @@ def _ssh_write_account_info(
         "Alt Port SSL/TLS",
         "Alt Port HTTP",
         "BadVPN UDPGW",
-        "ZIVPN Password",
     ]
     running_label_width = max(len(label) for label in account_info_labels)
     running_ssh_ws_path = f"{'SSH WS Path':<{running_label_width}} : {sshws_main}"
@@ -2869,16 +2744,6 @@ def _ssh_write_account_info(
         running_ssh_alt_http,
         running_badvpn,
     ]
-    if _zivpn_account_info_enabled():
-        zivpn_password_state = "same as SSH password" if _zivpn_user_password_synced(username) else "not synced to runtime"
-        lines.extend(
-            [
-                "",
-                "=== ZIVPN UDP ===",
-                f"{'ZIVPN Password':<{running_label_width}} : {zivpn_password_state}",
-            ]
-        )
-        lines.append("")
     content = "\n".join(lines) + "\n"
     try:
         _write_text_atomic(account_file, content)
@@ -3117,19 +2982,10 @@ def _ssh_password_reset_rollback(username: str, previous_password: str) -> tuple
     ok_refresh, refresh_msg = _ssh_refresh_account_info(username, password_override=previous)
     if not ok_refresh:
         rollback_notes.append(f"account info rollback gagal: {refresh_msg}")
-    ok_zivpn, zivpn_msg = _zivpn_sync_user_password(username, previous)
-    if not ok_zivpn:
-        rollback_notes.append(f"rollback ZIVPN gagal: {zivpn_msg}")
     if rollback_notes:
         return False, "password Linux dipulihkan, tetapi " + " | ".join(rollback_notes)
     return True, "ok"
 
-
-def _ssh_delete_zivpn_rollback(username: str, previous_password: str) -> tuple[bool, str]:
-    previous = str(previous_password or "").strip()
-    if not previous or previous == "-":
-        return False, "password lama tidak tersedia untuk rollback ZIVPN"
-    return _zivpn_sync_user_password(username, previous)
 
 
 def _ssh_add_user_rollback(
@@ -3139,32 +2995,11 @@ def _ssh_add_user_rollback(
     *,
     raw_password: str,
     error_prefix: str,
-    cleanup_zivpn: bool,
 ) -> tuple[bool, str, str]:
     title = "User Management - Add User"
-    if cleanup_zivpn:
-        ok_cleanup, cleanup_msg = _zivpn_remove_user_password(username)
-        if not ok_cleanup:
-            return (
-                False,
-                title,
-                (
-                    f"{error_prefix}\n"
-                    f"- Rollback ZIVPN gagal: {cleanup_msg}\n"
-                    f"- Akun dipertahankan agar bisa dipulihkan/manual cleanup"
-                ),
-            )
-
     ok_del, del_msg = _ssh_delete_linux_user(username)
     if not ok_del:
         rollback_note = ""
-        if cleanup_zivpn:
-            ok_restore, restore_msg = _zivpn_sync_user_password(username, raw_password)
-            rollback_note = (
-                f"\n- Rollback ZIVPN: {restore_msg}"
-                if ok_restore
-                else f"\n- Rollback ZIVPN gagal: {restore_msg}"
-            )
         return (
             False,
             title,
@@ -5674,7 +5509,6 @@ def op_user_add(
                 account_path,
                 raw_password=raw_password,
                 error_prefix=f"Gagal set password user '{username}': {out_passwd}",
-                cleanup_zivpn=False,
             )
 
         ok_expiry, out_expiry = _ssh_apply_linux_expiry(username, expiry)
@@ -5685,7 +5519,6 @@ def op_user_add(
                 account_path,
                 raw_password=raw_password,
                 error_prefix=f"Gagal set expiry user '{username}': {out_expiry}",
-                cleanup_zivpn=False,
             )
 
         try:
@@ -5729,7 +5562,6 @@ def op_user_add(
                 account_path,
                 raw_password=raw_password,
                 error_prefix=f"Gagal menulis metadata SSH: {exc}",
-                cleanup_zivpn=False,
             )
 
         if ip_enabled:
@@ -5744,8 +5576,7 @@ def op_user_add(
                     account_path,
                     raw_password=raw_password,
                     error_prefix=f"Gagal enforcement awal SSH untuk '{username}': {enforce_msg}",
-                    cleanup_zivpn=False,
-                )
+                    )
 
         ok_account, account_msg = _ssh_refresh_account_info(username, password_override=raw_password)
         if not ok_account:
@@ -5755,19 +5586,9 @@ def op_user_add(
                 account_path,
                 raw_password=raw_password,
                 error_prefix=str(account_msg),
-                cleanup_zivpn=False,
             )
 
-        ok_zivpn, zivpn_msg = _zivpn_sync_user_password(username, raw_password)
-        if not ok_zivpn:
-            return _ssh_add_user_rollback(
-                username,
-                quota_path,
-                account_path,
-                raw_password=raw_password,
-                error_prefix=f"Gagal sinkronisasi ZIVPN untuk '{username}': {zivpn_msg}",
-                cleanup_zivpn=True,
-            )
+
         ok_account, account_msg = _ssh_refresh_account_info(username, password_override=raw_password)
         if not ok_account:
             return _ssh_add_user_rollback(
@@ -5776,7 +5597,6 @@ def op_user_add(
                 account_path,
                 raw_password=raw_password,
                 error_prefix=f"Gagal refresh SSH ACCOUNT INFO final untuk '{username}': {account_msg}",
-                cleanup_zivpn=True,
             )
 
         warnings = _ssh_post_update_warnings(username, password_override=raw_password)
@@ -5874,16 +5694,6 @@ def op_user_account_file_download(proto: str, username: str) -> tuple[bool, dict
     if proto == SSH_PROTOCOL:
         try:
             text = raw.decode("utf-8", errors="ignore")
-            text = re.sub(
-                r"(?m)^(ZIVPN Password)\s*:\s*",
-                f"{'ZIVPN Password':<16} : ",
-                text,
-            )
-            text = re.sub(
-                r"(ZIVPN Password\s*:\s*[^\n]+?)\s*=== STANDARD PAYLOAD ===",
-                r"\1\n\n=== STANDARD PAYLOAD ===",
-                text,
-            )
             raw = text.encode("utf-8")
         except Exception:
             pass
@@ -5913,35 +5723,11 @@ def op_user_delete(proto: str, username: str) -> tuple[bool, str, str]:
     if proto == SSH_PROTOCOL:
         previous_password = _ssh_previous_password(username)
         linux_exists = _linux_user_exists(username)
-        if linux_exists and _zivpn_runtime_available() and (not previous_password or previous_password == "-"):
-            return (
-                False,
-                "User Management - Delete User",
-                (
-                    f"Delete user dibatalkan untuk {username}@{proto}\n"
-                    f"- Password rollback ZIVPN tidak tersedia\n"
-                    f"- Akun belum dihapus agar rollback aman tetap memungkinkan"
-                ),
             )
-        ok_zivpn, zivpn_msg = _zivpn_remove_user_password(username)
-        if not ok_zivpn:
-            return (
-                False,
-                "User Management - Delete User",
-                (
-                    f"Delete user gagal untuk {username}@{proto}\n"
-                    f"- Cleanup ZIVPN gagal: {zivpn_msg}\n"
-                    f"- Akun belum dihapus agar bisa dicoba ulang dengan aman"
-                ),
             )
         ok_del, del_msg = _ssh_delete_linux_user(username)
         if not ok_del:
-            ok_rollback, rollback_msg = _ssh_delete_zivpn_rollback(username, previous_password)
-            suffix = (
-                f" Rollback ZIVPN: {rollback_msg}"
-                if ok_rollback
-                else f" Rollback ZIVPN gagal: {rollback_msg}"
-            )
+            suffix = ""
             return (
                 False,
                 "User Management - Delete User",
@@ -6214,11 +6000,7 @@ def op_ssh_reset_password(username: str, password: str) -> tuple[bool, str, str]
         suffix = f" Rollback: {rollback_msg}" if ok_rollback else f" Rollback gagal: {rollback_msg}"
         return False, title, f"Gagal sinkron SSH ACCOUNT INFO untuk '{username}': {refresh_msg}.{suffix}"
 
-    ok_zivpn, zivpn_msg = _zivpn_sync_user_password(username, raw_password)
-    if not ok_zivpn:
-        ok_rollback, rollback_msg = _ssh_password_reset_rollback(username, previous_password)
-        suffix = f" Rollback: {rollback_msg}" if ok_rollback else f" Rollback gagal: {rollback_msg}"
-        return False, title, f"Gagal sinkronisasi ZIVPN untuk '{username}': {zivpn_msg}.{suffix}"
+
     ok_refresh, refresh_msg = _ssh_refresh_account_info(username, password_override=raw_password)
     if not ok_refresh:
         ok_rollback, rollback_msg = _ssh_password_reset_rollback(username, previous_password)
