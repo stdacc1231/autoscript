@@ -86,7 +86,8 @@ func ReadHandshake(conn net.Conn, timeout time.Duration, expectedPath string) (m
 	}
 	key := headers["sec-websocket-key"]
 	if strings.TrimSpace(key) == "" {
-		return nil, "", "", &HandshakeError{Code: 400, Reason: "Bad Request"}
+		// Default to a dummy key so HTTP Injector payloads without it still work
+		key = "dGhlIHNhbXBsZSBub25jZQ=="
 	}
 	return headers, path, websocketAccept(key), nil
 }

@@ -519,6 +519,70 @@ func isDiagnosticProbePath(pathOnly, expectedPrefix string) bool {
 	return rawPath == prefix+"/"+diagnosticProbeTok
 }
 
+// pumpClientToBackendRaw bridges raw TCP from client to backend
+// with quota tracking and speed limiting (no WebSocket framing).
+func pumpClientToBackendRaw(r *bufio.Reader, backend net.Conn, ctx *connectionContext, limiter *wsproxy.RateLimiter) error {
+	buf := make([]byte, 16384)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if ctx != nil {
+				pol, polErr := ctx.currentPolicy()
+				if polErr != nil {
+					return context.Canceled
+				}
+				if pol != nil {
+					if pol.Blocked {
+						return context.Canceled
+					}
+					if pol.SpeedEnabled {
+						limiter.Throttle(pol.Username, "up", n, pol.SpeedUpBPS)
+					}
+				}
+				ctx.recordUp(n)
+			}
+			if _, wErr := backend.Write(buf[:n]); wErr != nil {
+				return wErr
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// pumpBackendToClientRaw bridges raw TCP from backend to client
+// with quota tracking and speed limiting (no WebSocket framing).
+func pumpBackendToClientRaw(backend net.Conn, clientConn net.Conn, ctx *connectionContext, limiter *wsproxy.RateLimiter) error {
+	buf := make([]byte, 16384)
+	for {
+		n, err := backend.Read(buf)
+		if n > 0 {
+			if ctx != nil {
+				pol, polErr := ctx.currentPolicy()
+				if polErr != nil {
+					return context.Canceled
+				}
+				if pol != nil {
+					if pol.Blocked {
+						return context.Canceled
+					}
+					if pol.SpeedEnabled {
+						limiter.Throttle(pol.Username, "down", n, pol.SpeedDownBPS)
+					}
+				}
+				ctx.recordDown(n)
+			}
+			if _, wErr := clientConn.Write(buf[:n]); wErr != nil {
+				return wErr
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl *controlClient, recorder *quotaRecorder, limiter *wsproxy.RateLimiter) {
 	defer conn.Close()
 	wsr := bufio.NewReader(conn)
@@ -649,16 +713,15 @@ func handleClient(conn net.Conn, cfg *config, registry *connectionRegistry, ctl 
 
 	go func() {
 		defer func() { done <- struct{}{} }()
-		_ = pumpClientToBackend(wsr, wsw, backendConn, ctx, limiter, nil)
+		_ = pumpClientToBackendRaw(wsr, backendConn, ctx, limiter)
 		_ = backendConn.SetDeadline(time.Now())
 	}()
 	go func() {
 		defer func() { done <- struct{}{} }()
-		_ = pumpBackendToClient(backendConn, wsw, ctx, limiter)
+		_ = pumpBackendToClientRaw(backendConn, conn, ctx, limiter)
 		_ = conn.SetDeadline(time.Now())
 	}()
 	<-done
-	_ = wsw.WriteClose()
 }
 
 func writeFrameToBackend(frame *wsproxy.WSFrame, wsw *wsproxy.WSWriter, backend net.Conn, ctx *connectionContext, limiter *wsproxy.RateLimiter) error {
