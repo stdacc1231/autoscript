@@ -1381,6 +1381,15 @@ PY
   ssh_alt_tls_ports_disp="$(ssh_alt_tls_public_ports_label)"
   ssh_alt_http_ports_disp="$(ssh_alt_http_public_ports_label)"
   badvpn_port_disp="$(badvpn_public_port_label)"
+  account_info_labels=(
+    "SSH WS Path"
+    "SSH WS Path Alt"
+    "SSH WS Port"
+    "SSH Direct Port"
+    "SSH SSL/TLS Port"
+    "Alt Port SSL/TLS"
+    "Alt Port HTTP"
+    "BadVPN UDPGW"
     "Portal SSH"
   )
   running_label_width=0

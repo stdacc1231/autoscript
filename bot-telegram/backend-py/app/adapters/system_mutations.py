@@ -5723,8 +5723,6 @@ def op_user_delete(proto: str, username: str) -> tuple[bool, str, str]:
     if proto == SSH_PROTOCOL:
         previous_password = _ssh_previous_password(username)
         linux_exists = _linux_user_exists(username)
-            )
-            )
         ok_del, del_msg = _ssh_delete_linux_user(username)
         if not ok_del:
             suffix = ""
