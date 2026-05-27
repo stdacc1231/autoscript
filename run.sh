@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Harden PATH untuk mencegah PATH hijacking saat script dijalankan sebagai root.
+# Harden PATH to prevent PATH hijacking when script is run as root.
 SAFE_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 PATH="${SAFE_PATH}"
 export PATH
 
 # ============================================================
-# run.sh — Installer otomatis Xray VPN Server
+# run.sh — Automatic Xray VPN Server Installer
 # Repo: https://github.com/superdecrypt-dev/autoscript
 # ============================================================
 
 # -------------------------
-# Konstanta
+# Constants
 # -------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 RUN_USE_LOCAL_SOURCE="${RUN_USE_LOCAL_SOURCE:-0}"
@@ -25,12 +25,6 @@ if [[ "${RUN_USE_LOCAL_SOURCE}" == "1" ]]; then
 fi
 RUN_STATE_DIR="${RUN_STATE_DIR:-/var/lib/autoscript-run}"
 RUN_REPO_REF_FILE="${RUN_REPO_REF_FILE:-${RUN_STATE_DIR}/repo-ref}"
-AUTOSCRIPT_LICENSE_STATE_DIR="${AUTOSCRIPT_LICENSE_STATE_DIR:-/var/lib/autoscript-license}"
-AUTOSCRIPT_LICENSE_STATE_FILE="${AUTOSCRIPT_LICENSE_STATE_FILE:-${AUTOSCRIPT_LICENSE_STATE_DIR}/state.json}"
-AUTOSCRIPT_LICENSE_CACHE_FILE="${AUTOSCRIPT_LICENSE_CACHE_FILE:-${AUTOSCRIPT_LICENSE_STATE_DIR}/cache.json}"
-AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL="https://autoscript-license.minidecrypt.workers.dev/api/v1/license/check"
-AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}"
-AUTOSCRIPT_LICENSE_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}"
 MANAGE_BIN="/usr/local/bin/manage"
 MANAGE_MODULES_SRC_DIR="${REPO_DIR}/opt/manage"
 MANAGE_MODULES_DST_DIR="/opt/manage"
@@ -87,7 +81,7 @@ RUN_FALLBACK_REQUIRED_FILES=(
 )
 
 # -------------------------
-# Warna output
+# Output colors
 # -------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -109,7 +103,7 @@ hr() { echo "------------------------------------------------------------"; }
 
 ui_spinner_wait() {
   local pid="$1"
-  local label="${2:-Memproses}"
+  local label="${2:-Processing}"
   local start_ts now elapsed frame_idx rc
   local -a frames=('|' '/' '-' '\\')
 
@@ -148,7 +142,7 @@ run_step_with_spinner() {
   fi
 
   ensure_run_state_dir
-  log_file="$(mktemp "${RUN_STATE_DIR}/run-step.XXXXXX.log")" || die "Gagal membuat log sementara untuk ${label}."
+  log_file="$(mktemp "${RUN_STATE_DIR}/run-step.XXXXXX.log")" || die "Failed to create temporary log for ${label}."
   (
     "$@"
   ) >"${log_file}" 2>&1 &
@@ -164,7 +158,7 @@ run_step_with_spinner() {
     return 0
   fi
 
-  warn "${label} gagal. Potongan log terakhir:"
+  warn "${label} failed. Last log snippet:"
   hr
   tail -n 40 "${log_file}" 2>/dev/null || true
   hr
@@ -175,35 +169,6 @@ run_step_with_spinner() {
 ensure_run_state_dir() {
   mkdir -p "${RUN_STATE_DIR}"
   chmod 700 "${RUN_STATE_DIR}" 2>/dev/null || true
-}
-
-license_guard_enabled() {
-  local api_url="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL:-}"
-  [[ -n "${api_url}" ]]
-}
-
-run_license_repo_bin_path() {
-  printf '%s\n' "${REPO_DIR}/opt/setup/bin/autoscript-license-check"
-}
-
-run_license_preflight() {
-  if ! license_guard_enabled; then
-    subtle "License guard: nonaktif (URL lisensi tidak tersedia)"
-    return 0
-  fi
-
-  local license_bin=""
-  license_bin="$(run_license_repo_bin_path)"
-  [[ -f "${license_bin}" ]] || die "Binary source autoscript-license-check tidak ditemukan: ${license_bin}"
-
-  ensure_run_state_dir
-  install -d -m 0755 "${AUTOSCRIPT_LICENSE_STATE_DIR}"
-  AUTOSCRIPT_LICENSE_DEFAULT_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}" \
-  AUTOSCRIPT_LICENSE_API_URL="${AUTOSCRIPT_LICENSE_TRUSTED_DEFAULT_API_URL}" \
-  AUTOSCRIPT_LICENSE_CACHE_TTL_SEC="${AUTOSCRIPT_LICENSE_CACHE_TTL_SEC:-3600}" \
-  AUTOSCRIPT_LICENSE_STATE_FILE="${AUTOSCRIPT_LICENSE_STATE_FILE}" \
-  AUTOSCRIPT_LICENSE_CACHE_FILE="${AUTOSCRIPT_LICENSE_CACHE_FILE}" \
-  python3 "${license_bin}" check --stage run --allow-disabled=false
 }
 
 load_effective_repo_ref() {
@@ -217,8 +182,8 @@ load_effective_repo_ref() {
     if [[ "${saved}" == pinned:* ]]; then
       saved="${saved#pinned:}"
     else
-      # Format lama yang menyimpan HEAD mentah dianggap legacy dan diabaikan,
-      # supaya host tidak diam-diam terkunci ke commit lama.
+      # Old format storing raw HEAD is treated as legacy and ignored,
+      # so hosts are not silently locked to an old commit.
       saved=""
     fi
     if [[ -n "${saved}" ]]; then
@@ -289,9 +254,9 @@ preflight_repo_layout() {
   local rel=""
   local arch_suffix=""
 
-  [[ -d "${root}" ]] || die "Direktori source repo tidak ditemukan: ${root}"
-  [[ -d "${root}/opt/setup" ]] || die "Source modular setup tidak ditemukan: ${root}/opt/setup"
-  [[ -d "${root}/opt/manage" ]] || die "Source modular manage tidak ditemukan: ${root}/opt/manage"
+  [[ -d "${root}" ]] || die "Repo source directory not found: ${root}"
+  [[ -d "${root}/opt/setup" ]] || die "Modular setup source not found: ${root}/opt/setup"
+  [[ -d "${root}/opt/manage" ]] || die "Modular manage source not found: ${root}/opt/manage"
 
   while IFS= read -r rel; do
     [[ -n "${rel}" ]] || continue
@@ -306,9 +271,9 @@ preflight_repo_layout() {
   fi
 
   if (( ${#missing[@]} > 0 )); then
-    warn "Layout repo tidak lengkap di: ${root}"
+    warn "Incomplete repo layout at: ${root}"
     printf '  - %s\n' "${missing[@]}" >&2
-    die "Preflight repo gagal. Lengkapi source lokal/repo sebelum menjalankan run.sh."
+    die "Repo preflight failed. Complete the local/repo source before running run.sh."
   fi
 }
 
@@ -318,21 +283,21 @@ sync_tree_atomic() {
   local label="${3:-data}"
   local parent base stage backup=""
 
-  [[ -d "${src}" ]] || die "Source ${label} tidak ditemukan: ${src}"
+  [[ -d "${src}" ]] || die "Source ${label} not found: ${src}"
   parent="$(dirname "${dst}")"
   base="$(basename "${dst}")"
   mkdir -p "${parent}"
-  stage="$(mktemp -d "${parent}/.${base}.stage.XXXXXX")" || die "Gagal menyiapkan staging ${label}: ${dst}"
+  stage="$(mktemp -d "${parent}/.${base}.stage.XXXXXX")" || die "Failed to prepare staging ${label}: ${dst}"
   cp -a "${src}/." "${stage}/" || {
     rm -rf "${stage}" >/dev/null 2>&1 || true
-    die "Gagal menyalin ${label} ke staging: ${src}"
+    die "Failed to copy ${label} to staging: ${src}"
   }
 
   if [[ -e "${dst}" ]]; then
     backup="${parent}/.${base}.backup.$(date +%Y%m%d%H%M%S)"
     mv "${dst}" "${backup}" || {
       rm -rf "${stage}" >/dev/null 2>&1 || true
-      die "Gagal memindahkan ${label} lama ke backup: ${dst}"
+      die "Failed to move old ${label} to backup: ${dst}"
     }
   fi
 
@@ -341,7 +306,7 @@ sync_tree_atomic() {
     if [[ -n "${backup}" && -e "${backup}" ]]; then
       mv "${backup}" "${dst}" >/dev/null 2>&1 || true
     fi
-    die "Gagal mengaktifkan ${label} baru: ${dst}"
+    die "Failed to activate new ${label}: ${dst}"
   fi
 
   if [[ -n "${backup}" && -e "${backup}" ]]; then
@@ -355,37 +320,37 @@ reclone_repo_with_backup() {
   local backup=""
   backup="${target}.backup.$(date +%Y%m%d%H%M%S)"
 
-  warn "Repo kotor. Backup: ${backup}"
-  mv "${target}" "${backup}" || die "Gagal backup repositori lama: ${target}"
+  warn "Dirty repo. Backup: ${backup}"
+  mv "${target}" "${backup}" || die "Failed to backup old repository: ${target}"
 
-  log "Clone ulang repo ke ${target} ..."
+  log "Re-cloning repo to ${target} ..."
   if ! git clone --depth=1 "${REPO_URL}" "${target}" 2>&1; then
-    die "Gagal re-clone repositori setelah backup. Backup tersedia di: ${backup}"
+    die "Failed to re-clone repository after backup. Backup available at: ${backup}"
   fi
   if [[ -n "${ref}" ]]; then
     local fetch_err=""
     if ! fetch_err="$(git -C "${target}" fetch --depth=1 origin "${ref}" 2>&1)"; then
-      die "Gagal mengambil ref repositori setelah backup: ${ref}\n  Detail git: ${fetch_err}\n  Backup tersedia di: ${backup}"
+      die "Failed to fetch repository ref after backup: ${ref}\n  Git details: ${fetch_err}\n  Backup available at: ${backup}"
     fi
     git -C "${target}" checkout --detach FETCH_HEAD >/dev/null 2>&1 \
-      || die "Gagal checkout ref repositori setelah backup: ${ref}\n  Backup tersedia di: ${backup}"
+      || die "Failed to checkout repository ref after backup: ${ref}\n  Backup available at: ${backup}"
   fi
   persist_repo_ref "$(git -C "${target}" rev-parse HEAD 2>/dev/null || true)"
-  ok "Repo bersih siap."
-  ok "Backup lama: ${backup}"
+  ok "Clean repo ready."
+  ok "Old backup: ${backup}"
 }
 
 # -------------------------
-# Validasi
+# Validation
 # -------------------------
 check_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    die "Script ini harus dijalankan sebagai root.\n  Coba: sudo bash run.sh"
+    die "This script must be run as root.\n  Try: sudo bash run.sh"
   fi
 }
 
 check_os() {
-  [[ -f /etc/os-release ]] || die "Tidak menemukan /etc/os-release"
+  [[ -f /etc/os-release ]] || die "Could not find /etc/os-release"
   # shellcheck disable=SC1091
   . /etc/os-release
 
@@ -396,14 +361,14 @@ check_os() {
   if [[ "${id}" == "ubuntu" || "${id}" == "ubuntu-core" ]]; then
     local ok_ver
     ok_ver="$(awk "BEGIN { print (\"${ver}\" + 0 >= 20.04) ? 1 : 0 }")"
-    [[ "${ok_ver}" == "1" ]] || die "Ubuntu minimal 20.04. Versi terdeteksi: ${ver}"
+    [[ "${ok_ver}" == "1" ]] || die "Ubuntu 20.04 or higher required. Detected version: ${ver}"
     ok "OS: ${NAME:-Ubuntu} ${ver} (${codename})"
   elif [[ "${id}" == "debian" ]]; then
     local major="${ver%%.*}"
-    [[ "${major:-0}" -ge 11 ]] 2>/dev/null || die "Debian minimal 11. Versi terdeteksi: ${ver}"
+    [[ "${major:-0}" -ge 11 ]] 2>/dev/null || die "Debian 11 or higher required. Detected version: ${ver}"
     ok "OS: Debian ${ver} (${codename})"
   else
-    die "OS tidak didukung: ${id}. Hanya Ubuntu >=20.04 atau Debian >=11."
+    die "Unsupported OS: ${id}. Only Ubuntu >=20.04 or Debian >=11 are supported."
   fi
 }
 
@@ -422,16 +387,16 @@ check_deps() {
   fi
 
   if [[ ${#install_pkgs[@]} -gt 0 ]]; then
-    warn "Dependency belum ada: ${install_pkgs[*]}"
-    log "Pasang dependency yang kurang..."
+    warn "Missing dependencies: ${install_pkgs[*]}"
+    log "Installing missing dependencies..."
     apt-get update -y >/dev/null 2>&1 || true
-    apt-get install -y "${install_pkgs[@]}" || die "Gagal menginstal dependency run.sh"
-    ok "Dependency siap."
+    apt-get install -y "${install_pkgs[@]}" || die "Failed to install run.sh dependencies"
+    ok "Dependencies ready."
   fi
 }
 
 # -------------------------
-# Langkah instalasi
+# Installation steps
 # -------------------------
 clone_repo() {
   local effective_ref=""
@@ -443,7 +408,7 @@ clone_repo() {
 
   if [[ "${RUN_USE_LOCAL_SOURCE}" == "1" ]]; then
     preflight_repo_layout "${REPO_DIR}"
-    log "Source lokal: ${REPO_DIR}"
+    log "Local source: ${REPO_DIR}"
     return 0
   fi
 
@@ -453,7 +418,7 @@ clone_repo() {
     if [[ -z "$(find "${REPO_DIR}" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
       rmdir "${REPO_DIR}" || true
     else
-      die "Direktori ${REPO_DIR} sudah ada tetapi bukan git repo. Bersihkan/rename dulu lalu jalankan ulang."
+      die "Directory ${REPO_DIR} already exists but is not a git repo. Clean/rename it then re-run."
     fi
   fi
 
@@ -461,29 +426,29 @@ clone_repo() {
     current_head="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
     if [[ -n "${effective_ref}" ]]; then
       if repo_has_local_changes "${REPO_DIR}"; then
-        warn "Repo lokal kotor saat ref tersimpan ${effective_ref} aktif."
+        warn "Local repo is dirty while saved ref ${effective_ref} is active."
         reclone_repo_with_backup "${REPO_DIR}" "${effective_ref}"
         return 0
       fi
       if [[ "${current_head}" != "${effective_ref}" ]]; then
-        log "Sinkronkan repo ke ref tersimpan ${effective_ref} ..."
+        log "Syncing repo to saved ref ${effective_ref} ..."
         if ! fetch_err="$(git -C "${REPO_DIR}" fetch --depth=1 origin "${effective_ref}" 2>&1)"; then
-          die "Gagal mengambil ref repositori: ${effective_ref}\n  Detail git: ${fetch_err}"
+          die "Failed to fetch repository ref: ${effective_ref}\n  Git details: ${fetch_err}"
         fi
         git -C "${REPO_DIR}" checkout --detach FETCH_HEAD >/dev/null 2>&1 \
-          || die "Gagal checkout ref repositori: ${effective_ref}"
+          || die "Failed to checkout repository ref: ${effective_ref}"
       else
-        log "Repo sudah terkunci di ref ${effective_ref}."
+        log "Repo already locked at ref ${effective_ref}."
       fi
     else
-      log "Update repo di ${REPO_DIR} ..."
+      log "Updating repo at ${REPO_DIR} ..."
       if ! git -C "${REPO_DIR}" pull --ff-only origin "${REPO_DEFAULT_BRANCH}" 2>&1; then
         if repo_has_local_changes "${REPO_DIR}"; then
-          warn "Update repo gagal: working tree kotor."
+          warn "Repo update failed: working tree is dirty."
           reclone_repo_with_backup "${REPO_DIR}"
           return 0
         fi
-        die "Gagal update repositori di ${REPO_DIR}. Penyebab bukan perubahan lokal; cek koneksi/remote lalu coba lagi."
+        die "Failed to update repository at ${REPO_DIR}. Cause is not local changes; check connectivity/remote and try again."
       fi
       clear_repo_ref_pin
     fi
@@ -491,29 +456,29 @@ clone_repo() {
     if [[ -n "${effective_ref}" ]]; then
       persist_repo_ref "$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
     fi
-    ok "Repo siap."
+    ok "Repo ready."
     return 0
   fi
 
-  log "Clone repo ke ${REPO_DIR} ..."
+  log "Cloning repo to ${REPO_DIR} ..."
   if ! clone_err="$(git clone --depth=1 "${REPO_URL}" "${REPO_DIR}" 2>&1)"; then
     if grep -Eqi 'could not create work tree dir|permission denied|operation not permitted|read-only file system' <<<"${clone_err}"; then
-      die "Gagal mengkloning repositori: ${REPO_URL}\n  Penyebab: path tujuan tidak bisa ditulis (${REPO_DIR}). Cek permission/ownership direktori.\n  Detail git: ${clone_err}"
+      die "Failed to clone repository: ${REPO_URL}\n  Cause: destination path is not writable (${REPO_DIR}). Check directory permissions/ownership.\n  Git details: ${clone_err}"
     fi
-    die "Gagal mengkloning repositori: ${REPO_URL}\n  Pastikan server memiliki koneksi internet dan URL repo benar.\n  Detail git: ${clone_err}"
+    die "Failed to clone repository: ${REPO_URL}\n  Make sure the server has internet connectivity and the repo URL is correct.\n  Git details: ${clone_err}"
   fi
   if [[ -n "${effective_ref}" ]]; then
     if ! fetch_err="$(git -C "${REPO_DIR}" fetch --depth=1 origin "${effective_ref}" 2>&1)"; then
-      die "Gagal mengambil ref repositori: ${effective_ref}\n  Detail git: ${fetch_err}"
+      die "Failed to fetch repository ref: ${effective_ref}\n  Git details: ${fetch_err}"
     fi
     git -C "${REPO_DIR}" checkout --detach FETCH_HEAD >/dev/null 2>&1 \
-      || die "Gagal checkout ref repositori: ${effective_ref}"
+      || die "Failed to checkout repository ref: ${effective_ref}"
     persist_repo_ref "$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
   else
     clear_repo_ref_pin
   fi
   preflight_repo_layout "${REPO_DIR}"
-  ok "Repo siap."
+  ok "Repo ready."
 }
 
 install_manage() {
@@ -521,79 +486,79 @@ install_manage() {
   local telegram_installer_src="${REPO_DIR}/install-telegram-bot.sh"
   local restore_service_src="${REPO_DIR}/opt/setup/templates/systemd/ssh-network-restore.service"
 
-  [[ -f "${src}" ]] || die "File manage.sh tidak ditemukan di repositori."
-  [[ -f "${telegram_installer_src}" ]] || die "File install-telegram-bot.sh tidak ditemukan di repositori."
-  [[ -f "${restore_service_src}" ]] || die "Template ssh-network-restore.service tidak ditemukan di repositori."
+  [[ -f "${src}" ]] || die "manage.sh file not found in repository."
+  [[ -f "${telegram_installer_src}" ]] || die "install-telegram-bot.sh file not found in repository."
+  [[ -f "${restore_service_src}" ]] || die "ssh-network-restore.service template not found in repository."
   preflight_repo_layout "${REPO_DIR}"
 
-  log "Sync manage -> ${MANAGE_MODULES_DST_DIR} ..."
-  sync_tree_atomic "${MANAGE_MODULES_SRC_DIR}" "${MANAGE_MODULES_DST_DIR}" "modul manage"
+  log "Syncing manage -> ${MANAGE_MODULES_DST_DIR} ..."
+  sync_tree_atomic "${MANAGE_MODULES_SRC_DIR}" "${MANAGE_MODULES_DST_DIR}" "manage modules"
   find "${MANAGE_MODULES_DST_DIR}" -type d -exec chmod 755 {} + 2>/dev/null || true
   find "${MANAGE_MODULES_DST_DIR}" -type f -name '*.sh' -exec chmod 644 {} + 2>/dev/null || true
   chown -R root:root "${MANAGE_MODULES_DST_DIR}" 2>/dev/null || true
   ok "Manage modules: ${MANAGE_MODULES_DST_DIR}"
 
-  log "Sync fallback manage -> ${MANAGE_FALLBACK_MODULES_DST_DIR} ..."
-  sync_tree_atomic "${MANAGE_MODULES_SRC_DIR}" "${MANAGE_FALLBACK_MODULES_DST_DIR}" "fallback modul manage"
+  log "Syncing fallback manage -> ${MANAGE_FALLBACK_MODULES_DST_DIR} ..."
+  sync_tree_atomic "${MANAGE_MODULES_SRC_DIR}" "${MANAGE_FALLBACK_MODULES_DST_DIR}" "fallback manage modules"
   find "${MANAGE_FALLBACK_MODULES_DST_DIR}" -type d -exec chmod 755 {} + 2>/dev/null || true
   find "${MANAGE_FALLBACK_MODULES_DST_DIR}" -type f -name '*.sh' -exec chmod 644 {} + 2>/dev/null || true
   chown -R root:root "${MANAGE_FALLBACK_MODULES_DST_DIR}" 2>/dev/null || true
   ok "Fallback manage: ${MANAGE_FALLBACK_MODULES_DST_DIR}"
 
-  log "Pasang manage -> ${MANAGE_BIN} ..."
+  log "Installing manage -> ${MANAGE_BIN} ..."
   install -m 0755 "${src}" "${MANAGE_BIN}"
-  ok "manage siap."
+  ok "manage ready."
 
-  log "Pasang ssh-network-restore.service ..."
+  log "Installing ssh-network-restore.service ..."
   install -m 0644 "${restore_service_src}" /etc/systemd/system/ssh-network-restore.service
   local restore_result=""
   systemctl daemon-reload
-  systemctl enable ssh-network-restore.service >/dev/null 2>&1 || die "Gagal mengaktifkan ssh-network-restore.service."
+  systemctl enable ssh-network-restore.service >/dev/null 2>&1 || die "Failed to enable ssh-network-restore.service."
   systemctl reset-failed ssh-network-restore.service >/dev/null 2>&1 || true
   if ! systemctl restart ssh-network-restore.service >/dev/null 2>&1; then
     systemctl status ssh-network-restore.service --no-pager >&2 || true
     journalctl -u ssh-network-restore.service -n 80 --no-pager >&2 || true
-    die "Gagal menjalankan ssh-network-restore.service."
+    die "Failed to start ssh-network-restore.service."
   fi
   restore_result="$(systemctl show -p Result --value ssh-network-restore.service 2>/dev/null || true)"
   if [[ "${restore_result}" != "success" ]] || ! systemctl is-active --quiet ssh-network-restore.service; then
     systemctl status ssh-network-restore.service --no-pager >&2 || true
     journalctl -u ssh-network-restore.service -n 80 --no-pager >&2 || true
-    die "ssh-network-restore.service tidak sehat setelah restart (Result=${restore_result:-unknown})."
+    die "ssh-network-restore.service is not healthy after restart (Result=${restore_result:-unknown})."
   fi
-  ok "ssh-network-restore.service aktif."
+  ok "ssh-network-restore.service active."
 
-  log "Pasang installer Telegram -> ${TELEGRAM_INSTALLER_BIN} ..."
+  log "Installing Telegram installer -> ${TELEGRAM_INSTALLER_BIN} ..."
   install -m 0755 "${telegram_installer_src}" "${TELEGRAM_INSTALLER_BIN}"
-  ok "Installer Telegram siap."
+  ok "Telegram installer ready."
 }
 
 seed_telegram_bot_home() {
   if [[ ! -d "${TELEGRAM_BOT_SRC_DIR}" ]]; then
-    warn "Source bot Telegram tidak ditemukan di repo (${TELEGRAM_BOT_SRC_DIR}); lewati bootstrap /opt/bot-telegram."
+    warn "Telegram bot source not found in repo (${TELEGRAM_BOT_SRC_DIR}); skipping /opt/bot-telegram bootstrap."
     return 0
   fi
 
   if [[ -d "${TELEGRAM_BOT_HOME}" ]] && [[ -n "$(find "${TELEGRAM_BOT_HOME}" -mindepth 1 -maxdepth 1 2>/dev/null || true)" ]]; then
-    ok "Telegram home sudah ada."
+    ok "Telegram home already exists."
     return 0
   fi
 
-  log "Siapkan source Telegram -> ${TELEGRAM_BOT_HOME} ..."
+  log "Preparing Telegram source -> ${TELEGRAM_BOT_HOME} ..."
   mkdir -p "${TELEGRAM_BOT_HOME}"
   cp -a "${TELEGRAM_BOT_SRC_DIR}/." "${TELEGRAM_BOT_HOME}/"
   chown -R root:root "${TELEGRAM_BOT_HOME}" 2>/dev/null || true
-  ok "Telegram source siap."
+  ok "Telegram source ready."
 }
 
 cleanup_repo_after_success() {
   if [[ "${RUN_USE_LOCAL_SOURCE}" == "1" ]]; then
-    warn "Source lokal dipertahankan: ${REPO_DIR}"
+    warn "Local source retained: ${REPO_DIR}"
     return 0
   fi
 
   if [[ "${KEEP_REPO_AFTER_INSTALL:-0}" == "1" ]]; then
-    warn "Repo dipertahankan: ${REPO_DIR}"
+    warn "Repo retained: ${REPO_DIR}"
     return 0
   fi
 
@@ -609,7 +574,7 @@ cleanup_repo_after_success() {
 
   case "${resolved}" in
     "/"|"/."|"/.."|"/bin"|"/boot"|"/dev"|"/etc"|"/home"|"/lib"|"/lib64"|"/media"|"/mnt"|"/opt"|"/proc"|"/root"|"/run"|"/sbin"|"/srv"|"/sys"|"/tmp"|"/usr"|"/var")
-      die "Menolak hapus path berbahaya: ${resolved}"
+      die "Refusing to delete dangerous path: ${resolved}"
       ;;
   esac
 
@@ -618,18 +583,18 @@ cleanup_repo_after_success() {
   fi
 
   rm -rf -- "${resolved}"
-  ok "Source repo dibersihkan."
+  ok "Repo source cleaned up."
 }
 
 run_setup() {
   local setup="${REPO_DIR}/setup.sh"
 
-  [[ -f "${setup}" ]] || die "File setup.sh tidak ditemukan di repositori."
+  [[ -f "${setup}" ]] || die "setup.sh file not found in repository."
 
-  log "Buka setup interaktif..."
-  subtle "Prompt domain tetap dijalankan dari setup.sh."
+  log "Launching interactive setup..."
+  subtle "Domain prompt is still handled by setup.sh."
   SETUP_SKIP_MANAGE_SYNC=1 bash "${setup}"
-  ok "setup.sh selesai."
+  ok "setup.sh completed."
 }
 
 # -------------------------
@@ -644,18 +609,17 @@ main() {
 
   check_root
   check_os
-  run_step_with_spinner "Memeriksa dependency" check_deps
-  run_step_with_spinner "Menyiapkan source repo" clone_repo
-  run_step_with_spinner "Validasi lisensi IP VPS" run_license_preflight
+  run_step_with_spinner "Checking dependencies" check_deps
+  run_step_with_spinner "Preparing repo source" clone_repo
   run_setup
-  run_step_with_spinner "Memasang panel manage" install_manage
-  run_step_with_spinner "Menyiapkan source Telegram" seed_telegram_bot_home
-  run_step_with_spinner "Membersihkan source installer" cleanup_repo_after_success
+  run_step_with_spinner "Installing manage panel" install_manage
+  run_step_with_spinner "Preparing Telegram source" seed_telegram_bot_home
+  run_step_with_spinner "Cleaning up installer source" cleanup_repo_after_success
 
   echo
   echo -e "${BOLD}============================================================${NC}"
-  ok "Install selesai."
-  echo -e "  Buka panel: ${BOLD}manage${NC}"
+  ok "Installation complete."
+  echo -e "  Open panel: ${BOLD}manage${NC}"
   echo -e "${BOLD}============================================================${NC}"
   echo
 }
